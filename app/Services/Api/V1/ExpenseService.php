@@ -5,10 +5,14 @@ namespace App\Services\Api\V1;
 use App\Models\Expense;
 use App\Models\User;
 use App\Repositories\Api\V1\ExpenseRepository;
+use App\Services\AuditLogger;
 
 class ExpenseService
 {
-    public function __construct(private readonly ExpenseRepository $expenses) {}
+    public function __construct(
+        private readonly ExpenseRepository $expenses,
+        private readonly AuditLogger $auditLogger,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $validated
@@ -18,30 +22,51 @@ class ExpenseService
         $quantity = (float) $validated['quantity'];
         $price = (float) $validated['price'];
 
-        return $this->expenses->create([
+        $expense = $this->expenses->create([
             ...$validated,
             'shop_id' => $shopId,
             'user_id' => $actor->id,
             'total' => $quantity * $price,
         ]);
+
+        $this->auditLogger->log('expenses.created', $actor, $expense, [
+            'name' => $expense->name,
+            'total' => (float) $expense->total,
+        ], $shopId);
+
+        return $expense;
     }
 
     /**
      * @param  array<string, mixed>  $validated
      */
-    public function updateExpense(Expense $expense, array $validated): Expense
+    public function updateExpense(User $actor, Expense $expense, array $validated): Expense
     {
+        $before = $expense->only(['name', 'quantity', 'price', 'total', 'note']);
+
         $expense->fill($validated);
         $quantity = (float) ($validated['quantity'] ?? $expense->quantity);
         $price = (float) ($validated['price'] ?? $expense->price);
         $expense->total = $quantity * $price;
         $expense->save();
 
+        $this->auditLogger->log('expenses.updated', $actor, $expense, [
+            'before' => $before,
+            'after' => $expense->only(['name', 'quantity', 'price', 'total', 'note']),
+        ]);
+
         return $expense;
     }
 
-    public function deleteExpense(Expense $expense): void
+    public function deleteExpense(User $actor, Expense $expense): void
     {
+        $metadata = [
+            'name' => $expense->name,
+            'total' => (float) $expense->total,
+        ];
+
         $expense->delete();
+
+        $this->auditLogger->log('expenses.deleted', $actor, metadata: $metadata, shopId: $expense->shop_id);
     }
 }

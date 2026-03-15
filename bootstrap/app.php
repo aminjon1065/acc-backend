@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureActiveShop;
 use App\Http\Middleware\EnsureApiAbility;
 use App\Http\Middleware\EnsureShopScope;
 use App\Http\Middleware\EnsureSuperAdmin;
@@ -42,6 +43,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'super_admin' => EnsureSuperAdmin::class,
             'api_ability' => EnsureApiAbility::class,
+            'active_shop' => EnsureActiveShop::class,
             'shop_scope' => EnsureShopScope::class,
         ]);
     })

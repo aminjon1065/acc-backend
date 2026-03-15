@@ -76,7 +76,7 @@ class ExpenseController extends Controller
         $this->authorize('update', $expense);
 
         $scoped = $this->expenses->findForUser($request->user(), $expense->id);
-        $updated = $this->expenseService->updateExpense($scoped, $request->validated());
+        $updated = $this->expenseService->updateExpense($request->user(), $scoped, $request->validated());
 
         return new ExpenseResource($updated);
     }
@@ -89,7 +89,7 @@ class ExpenseController extends Controller
         $this->authorize('delete', $expense);
 
         $scoped = $this->expenses->findForUser($request->user(), $expense->id);
-        $this->expenseService->deleteExpense($scoped);
+        $this->expenseService->deleteExpense($request->user(), $scoped);
 
         return response()->json([
             'success' => true,

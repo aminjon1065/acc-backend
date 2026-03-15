@@ -6,12 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\UpdateCurrencyRequest;
 use App\Http\Resources\Api\V1\CurrencyResource;
 use App\Models\Currency;
+use App\Services\AuditLogger;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 
 class CurrencyController extends Controller
 {
+    public function __construct(
+        private readonly AuditLogger $auditLogger,
+    ) {}
+
     /**
      * Display a listing of the resource.
      */
@@ -45,7 +50,9 @@ class CurrencyController extends Controller
     {
         $this->authorize('update', $currency);
 
-        DB::transaction(function () use ($request, $currency): void {
+        $before = $currency->only(['code', 'rate', 'is_default']);
+
+        DB::transaction(function () use ($request, $currency, $before): void {
             $currency->fill($request->validated());
 
             if ($request->boolean('is_default')) {
@@ -54,6 +61,11 @@ class CurrencyController extends Controller
             }
 
             $currency->save();
+
+            $this->auditLogger->log('currencies.updated', $request->user(), $currency, [
+                'before' => $before,
+                'after' => $currency->only(['code', 'rate', 'is_default']),
+            ]);
         });
 
         return new CurrencyResource($currency->fresh());

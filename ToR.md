@@ -121,7 +121,10 @@ Global administrator of the system.
 
 Permissions:
 
+- full access to all modules and tenant data
 - manage shops
+- attach owners to shops
+- manage all users across all shops
 - view all system data
 - suspend shops
 - view global reports
@@ -140,8 +143,9 @@ Permissions:
 - manage sales
 - manage expenses
 - manage debts
-- manage shop users
+- manage only seller users in own shop
 - view reports
+- view own shop profile
 
 ---
 
@@ -153,16 +157,17 @@ Permissions:
 
 - create sales
 - view products and inventory
-- create/update products in own shop
-- create/update expenses and debts in own shop
-- create purchases in own shop
-- view reports
 - view own shop profile
 
 Restrictions:
 
 - cannot manage users
 - cannot change settings
+- cannot manage products
+- cannot manage purchases
+- cannot manage expenses
+- cannot manage debts
+- cannot view reports
 - cannot create/update/delete shops
 
 ---
@@ -281,6 +286,12 @@ Roles:
 super_admin  
 owner  
 seller  
+
+Access rules:
+
+- Super Admin can create and manage `owner` and `seller` users in any shop
+- Owner can create and manage only `seller` users in own shop
+- Seller can only view and update own profile
 
 ---
 

@@ -58,6 +58,73 @@ test('owner cannot create super admin user', function () {
         ->assertForbidden();
 });
 
+test('owner can create only sellers and cannot create another owner', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+
+    $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/users', [
+            'name' => 'Second Owner',
+            'email' => 'owner2@example.com',
+            'password' => 'password123',
+            'role' => UserRole::Owner->value,
+        ])
+        ->assertForbidden();
+
+    $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/users', [
+            'name' => 'Seller A',
+            'email' => 'seller-only@example.com',
+            'password' => 'password123',
+            'role' => UserRole::Seller->value,
+        ])
+        ->assertCreated()
+        ->assertJsonPath('data.role', UserRole::Seller->value)
+        ->assertJsonPath('data.shop_id', $shop->id);
+});
+
+test('owner cannot update another owner in same shop', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $anotherOwner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+
+    $this->actingAs($owner, 'sanctum')
+        ->patchJson('/api/v1/users/'.$anotherOwner->id, [
+            'name' => 'Blocked Owner',
+        ])
+        ->assertForbidden();
+});
+
+test('owner user listing includes self and sellers only', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Seller->value,
+    ]);
+    User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+
+    $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/users')
+        ->assertSuccessful()
+        ->assertJsonCount(2, 'data');
+});
+
 test('seller cannot list or create users', function () {
     $shop = Shop::factory()->create();
     $seller = User::factory()->create([

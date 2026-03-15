@@ -4,22 +4,23 @@ namespace App\Policies;
 
 use App\Models\Purchase;
 use App\Models\User;
+use App\UserRole;
 
 class PurchasePolicy
 {
     public function viewAny(User $user): bool
     {
-        return $this->isOperationalRole($user);
+        return $this->isOwnerOrAdmin($user);
     }
 
     public function view(User $user, Purchase $purchase): bool
     {
-        return $user->isSuperAdmin() || $this->inSameShop($user, $purchase->shop_id);
+        return $user->isSuperAdmin() || ($user->role === UserRole::Owner && $this->inSameShop($user, $purchase->shop_id));
     }
 
     public function create(User $user): bool
     {
-        return $this->isOperationalRole($user);
+        return $this->isOwnerOrAdmin($user);
     }
 
     public function update(User $user, Purchase $purchase): bool
@@ -45,6 +46,11 @@ class PurchasePolicy
     private function isOperationalRole(User $user): bool
     {
         return $user->isSuperAdmin() || $user->shop_id !== null;
+    }
+
+    private function isOwnerOrAdmin(User $user): bool
+    {
+        return $user->isSuperAdmin() || $user->role === UserRole::Owner;
     }
 
     private function inSameShop(User $user, ?int $shopId): bool

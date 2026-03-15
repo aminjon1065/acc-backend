@@ -5,11 +5,15 @@ namespace App\Services\Api\V1;
 use App\Models\Debt;
 use App\Models\User;
 use App\Repositories\Api\V1\DebtRepository;
+use App\Services\AuditLogger;
 use Illuminate\Support\Facades\DB;
 
 class DebtService
 {
-    public function __construct(private readonly DebtRepository $debts) {}
+    public function __construct(
+        private readonly DebtRepository $debts,
+        private readonly AuditLogger $auditLogger,
+    ) {}
 
     public function createDebt(User $actor, int $shopId, string $personName, float $openingBalance): Debt
     {
@@ -31,7 +35,15 @@ class DebtService
                 ]);
             }
 
-            return $debt->fresh('transactions');
+            $freshDebt = $debt->fresh('transactions');
+
+            $this->auditLogger->log('debts.created', $actor, $freshDebt, [
+                'person_name' => $personName,
+                'opening_balance' => $openingBalance,
+                'balance' => (float) $freshDebt->balance,
+            ], $shopId);
+
+            return $freshDebt;
         });
     }
 
@@ -52,7 +64,16 @@ class DebtService
                 'balance' => (float) $debt->balance + $delta,
             ]);
 
-            return $debt->fresh('transactions');
+            $freshDebt = $debt->fresh('transactions');
+
+            $this->auditLogger->log('debts.transaction_recorded', $actor, $freshDebt, [
+                'type' => $type,
+                'amount' => $amount,
+                'note' => $note,
+                'balance' => (float) $freshDebt->balance,
+            ], $debt->shop_id);
+
+            return $freshDebt;
         });
     }
 }

@@ -32,7 +32,10 @@ test('mobile user can login and receive token', function () {
 });
 
 test('mobile user cannot login with invalid password', function () {
+    $shop = Shop::factory()->create();
+
     User::factory()->create([
+        'shop_id' => $shop->id,
         'email' => 'owner@example.com',
         'password' => 'password',
     ]);
@@ -49,7 +52,10 @@ test('mobile user cannot login with invalid password', function () {
 });
 
 test('authenticated user can request profile and logout', function () {
+    $shop = Shop::factory()->create();
+
     $user = User::factory()->create([
+        'shop_id' => $shop->id,
         'role' => UserRole::Seller->value,
     ]);
 
@@ -69,7 +75,10 @@ test('authenticated user can request profile and logout', function () {
 });
 
 test('authenticated user can refresh api token', function () {
+    $shop = Shop::factory()->create();
+
     $user = User::factory()->create([
+        'shop_id' => $shop->id,
         'role' => UserRole::Owner->value,
     ]);
 
@@ -91,4 +100,47 @@ test('authenticated user can refresh api token', function () {
         ]);
 
     expect($user->fresh()->tokens()->count())->toBe(1);
+});
+
+test('mobile login is rate limited after repeated failed attempts', function () {
+    $shop = Shop::factory()->create();
+
+    User::factory()->create([
+        'shop_id' => $shop->id,
+        'email' => 'owner@example.com',
+        'password' => 'password',
+    ]);
+
+    foreach (range(1, 5) as $attempt) {
+        $this->postJson('/api/v1/auth/login', [
+            'email' => 'owner@example.com',
+            'password' => 'wrong-password',
+        ])->assertUnprocessable();
+    }
+
+    $this->postJson('/api/v1/auth/login', [
+        'email' => 'owner@example.com',
+        'password' => 'wrong-password',
+    ])->assertTooManyRequests();
+});
+
+test('mobile user from suspended shop cannot login', function () {
+    $shop = Shop::factory()->create([
+        'status' => 'suspended',
+    ]);
+
+    User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+        'email' => 'suspended@example.com',
+        'password' => 'password',
+    ]);
+
+    $this->postJson('/api/v1/auth/login', [
+        'email' => 'suspended@example.com',
+        'password' => 'password',
+    ])
+        ->assertForbidden()
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('message', 'Shop is suspended.');
 });

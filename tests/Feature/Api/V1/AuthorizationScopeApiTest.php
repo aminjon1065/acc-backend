@@ -86,3 +86,71 @@ test('owner cannot view sale from another shop by id tampering', function () {
         ->getJson('/api/v1/sales/'.$saleInShopB->id)
         ->assertNotFound();
 });
+
+test('seller cannot create product expense purchase debt or view reports', function () {
+    $shop = Shop::factory()->create();
+    $seller = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Seller->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'stock_quantity' => 10,
+    ]);
+
+    $this->actingAs($seller, 'sanctum')
+        ->postJson('/api/v1/products', [
+            'name' => 'Blocked',
+            'cost_price' => 1,
+            'sale_price' => 2,
+            'stock_quantity' => 5,
+        ])
+        ->assertForbidden();
+
+    $this->actingAs($seller, 'sanctum')
+        ->postJson('/api/v1/expenses', [
+            'name' => 'Blocked Expense',
+            'quantity' => 1,
+            'price' => 10,
+        ])
+        ->assertForbidden();
+
+    $this->actingAs($seller, 'sanctum')
+        ->postJson('/api/v1/purchases', [
+            'items' => [
+                [
+                    'product_id' => $product->id,
+                    'quantity' => 1,
+                    'price' => 10,
+                ],
+            ],
+        ])
+        ->assertForbidden();
+
+    $this->actingAs($seller, 'sanctum')
+        ->postJson('/api/v1/debts', [
+            'person_name' => 'Blocked Debt',
+        ])
+        ->assertForbidden();
+
+    $this->actingAs($seller, 'sanctum')
+        ->getJson('/api/v1/reports/sales')
+        ->assertForbidden();
+});
+
+test('suspended shop user cannot access protected api endpoints', function () {
+    $shop = Shop::factory()->create([
+        'status' => 'suspended',
+    ]);
+
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+
+    $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/products')
+        ->assertForbidden()
+        ->assertJsonPath('success', false)
+        ->assertJsonPath('message', 'Shop is suspended.');
+});

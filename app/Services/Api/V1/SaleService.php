@@ -5,12 +5,16 @@ namespace App\Services\Api\V1;
 use App\Models\Sale;
 use App\Models\User;
 use App\Repositories\Api\V1\SaleRepository;
+use App\Services\AuditLogger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class SaleService
 {
-    public function __construct(private readonly SaleRepository $sales) {}
+    public function __construct(
+        private readonly SaleRepository $sales,
+        private readonly AuditLogger $auditLogger,
+    ) {}
 
     /**
      * @param  array<int, array<string, mixed>>  $items
@@ -78,7 +82,19 @@ class SaleService
                 'debt' => $debt,
             ]);
 
-            return $sale->fresh(['items.product']);
+            $freshSale = $sale->fresh(['items.product']);
+
+            $this->auditLogger->log('sales.created', $actor, $freshSale, [
+                'customer_name' => $customerName,
+                'items_count' => count($items),
+                'discount' => $discount,
+                'paid' => $paid,
+                'total' => (float) $freshSale->total,
+                'debt' => (float) $freshSale->debt,
+                'payment_type' => $paymentType,
+            ], $shopId);
+
+            return $freshSale;
         });
     }
 }

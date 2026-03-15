@@ -4,16 +4,22 @@ use App\Models\Product;
 use App\Models\Shop;
 use App\Models\User;
 use App\UserRole;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 
 test('shop owner can create and list own products', function () {
+    Storage::fake('public');
+
     $shop = Shop::factory()->create();
     $owner = User::factory()->create([
         'shop_id' => $shop->id,
         'role' => UserRole::Owner->value,
     ]);
 
+    $image = UploadedFile::fake()->image('coffee.jpg');
+
     $this->actingAs($owner, 'sanctum')
-        ->postJson('/api/v1/products', [
+        ->post('/api/v1/products', [
             'name' => 'Coffee',
             'code' => 'COF-001',
             'unit' => 'piece',
@@ -21,15 +27,55 @@ test('shop owner can create and list own products', function () {
             'sale_price' => 10,
             'stock_quantity' => 100,
             'low_stock_alert' => 5,
+            'image' => $image,
         ])
         ->assertCreated()
         ->assertJsonPath('data.name', 'Coffee')
-        ->assertJsonPath('data.shop_id', $shop->id);
+        ->assertJsonPath('data.shop_id', $shop->id)
+        ->assertJsonPath('data.image_path', fn (?string $path) => is_string($path) && str_starts_with($path, "products/{$shop->id}/"))
+        ->assertJsonPath('data.image_url', fn (?string $url) => is_string($url) && str_contains($url, '/storage/products/'.$shop->id.'/'));
+
+    $product = Product::query()->firstOrFail();
+
+    expect($product->image_path)->not->toBeNull();
+
+    Storage::disk('public')->assertExists($product->image_path);
 
     $this->actingAs($owner, 'sanctum')
         ->getJson('/api/v1/products')
         ->assertOk()
         ->assertJsonCount(1, 'data');
+});
+
+test('shop owner can replace product image', function () {
+    Storage::fake('public');
+
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'image_path' => UploadedFile::fake()->image('old.jpg')->store("products/{$shop->id}", 'public'),
+    ]);
+    $oldImagePath = $product->image_path;
+
+    $newImage = UploadedFile::fake()->image('new.jpg');
+
+    $this->actingAs($owner, 'sanctum')
+        ->post('/api/v1/products/'.$product->id, [
+            '_method' => 'PATCH',
+            'image' => $newImage,
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.id', $product->id)
+        ->assertJsonPath('data.image_path', fn (?string $path) => is_string($path) && $path !== $oldImagePath);
+
+    $product->refresh();
+
+    Storage::disk('public')->assertMissing($oldImagePath);
+    Storage::disk('public')->assertExists($product->image_path);
 });
 
 test('owner cannot access product from another shop', function () {

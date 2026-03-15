@@ -1,6 +1,6 @@
 # ToR Progress Tracker
 
-Last updated: 2026-03-07
+Last updated: 2026-03-15
 Reference: `ToR.md`
 
 ## Module Status
@@ -30,6 +30,12 @@ Reference: `ToR.md`
 - Reports: `sales`, `expenses`, `profit`, `stock`
 - Currencies: `index`, `show`, `update`
 - Settings: `show`, `update`
+
+## Current Role Matrix
+
+- `super_admin`: full access to all modules, shops, users, currencies, settings, reports
+- `owner`: full operational access in own shop + can create/manage only `seller` users in own shop
+- `seller`: sales create/view, products view, own shop view, own profile view/update
 
 ## ToR Acceptance Criteria Tracking
 
@@ -76,3 +82,4 @@ Reference: `ToR.md`
 - Service/Repository architecture is implemented for transaction-heavy modules:
   - `Sales`, `Purchases`, `Debts`, `Products`, `Expenses`
 - Redis caching is intentionally deferred for a later phase.
+- `sales`, `purchases`, and `debts` currently do not expose full update/delete lifecycle endpoints.

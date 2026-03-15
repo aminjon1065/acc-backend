@@ -13,16 +13,16 @@ final class ApiPermissionMatrix
         'products' => [
             'viewAny' => ['super_admin', 'owner', 'seller'],
             'view' => ['super_admin', 'owner', 'seller'],
-            'create' => ['super_admin', 'owner', 'seller'],
-            'update' => ['super_admin', 'owner', 'seller'],
-            'delete' => ['super_admin', 'owner', 'seller'],
+            'create' => ['super_admin', 'owner'],
+            'update' => ['super_admin', 'owner'],
+            'delete' => ['super_admin', 'owner'],
         ],
         'expenses' => [
-            'viewAny' => ['super_admin', 'owner', 'seller'],
-            'view' => ['super_admin', 'owner', 'seller'],
-            'create' => ['super_admin', 'owner', 'seller'],
-            'update' => ['super_admin', 'owner', 'seller'],
-            'delete' => ['super_admin', 'owner', 'seller'],
+            'viewAny' => ['super_admin', 'owner'],
+            'view' => ['super_admin', 'owner'],
+            'create' => ['super_admin', 'owner'],
+            'update' => ['super_admin', 'owner'],
+            'delete' => ['super_admin', 'owner'],
         ],
         'currencies' => [
             'viewAny' => ['super_admin', 'owner', 'seller'],
@@ -30,15 +30,15 @@ final class ApiPermissionMatrix
             'update' => ['super_admin'],
         ],
         'debts' => [
-            'viewAny' => ['super_admin', 'owner', 'seller'],
-            'view' => ['super_admin', 'owner', 'seller'],
-            'create' => ['super_admin', 'owner', 'seller'],
-            'update' => ['super_admin', 'owner', 'seller'],
+            'viewAny' => ['super_admin', 'owner'],
+            'view' => ['super_admin', 'owner'],
+            'create' => ['super_admin', 'owner'],
+            'update' => ['super_admin', 'owner'],
         ],
         'purchases' => [
-            'viewAny' => ['super_admin', 'owner', 'seller'],
-            'view' => ['super_admin', 'owner', 'seller'],
-            'create' => ['super_admin', 'owner', 'seller'],
+            'viewAny' => ['super_admin', 'owner'],
+            'view' => ['super_admin', 'owner'],
+            'create' => ['super_admin', 'owner'],
         ],
         'sales' => [
             'viewAny' => ['super_admin', 'owner', 'seller'],
@@ -64,7 +64,7 @@ final class ApiPermissionMatrix
             'update' => ['super_admin', 'owner'],
         ],
         'reports' => [
-            'view' => ['super_admin', 'owner', 'seller'],
+            'view' => ['super_admin', 'owner'],
         ],
     ];
 

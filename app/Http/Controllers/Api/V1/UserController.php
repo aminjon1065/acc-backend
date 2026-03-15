@@ -29,6 +29,16 @@ class UserController extends Controller
 
         if (! $actor->isSuperAdmin()) {
             $users->where('shop_id', $actor->shop_id);
+
+            if ($actor->role === UserRole::Owner) {
+                $users->where(function ($query) use ($actor): void {
+                    $query
+                        ->where('id', $actor->id)
+                        ->orWhere('role', UserRole::Seller->value);
+                });
+            } elseif ($actor->role === UserRole::Seller) {
+                $users->whereKey($actor->id);
+            }
         } elseif ($request->filled('shop_id')) {
             $users->where('shop_id', $request->integer('shop_id'));
         }
@@ -48,7 +58,13 @@ class UserController extends Controller
         $actor = $request->user();
         $data = $request->validated();
 
-        if (! $actor->isSuperAdmin()) {
+        if ($actor->role === UserRole::Owner) {
+            if (($data['role'] ?? null) !== UserRole::Seller->value) {
+                abort(403);
+            }
+
+            $data['shop_id'] = $actor->shop_id;
+        } elseif (! $actor->isSuperAdmin()) {
             if (($data['role'] ?? null) === UserRole::SuperAdmin->value) {
                 abort(403);
             }
@@ -94,6 +110,17 @@ class UserController extends Controller
 
         if ($actor->role === UserRole::Seller) {
             unset($data['role'], $data['shop_id']);
+        } elseif ($actor->role === UserRole::Owner) {
+            if ($actor->id === $user->id) {
+                unset($data['role'], $data['shop_id']);
+            } else {
+                if (($data['role'] ?? UserRole::Seller->value) !== UserRole::Seller->value) {
+                    abort(403);
+                }
+
+                $data['role'] = UserRole::Seller->value;
+                $data['shop_id'] = $actor->shop_id;
+            }
         }
 
         if (! $actor->isSuperAdmin()) {

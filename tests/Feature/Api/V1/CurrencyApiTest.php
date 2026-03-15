@@ -12,7 +12,10 @@ test('authenticated user can view currencies', function () {
         'is_default' => true,
     ]);
 
+    $shop = \App\Models\Shop::factory()->create();
+
     $owner = User::factory()->create([
+        'shop_id' => $shop->id,
         'role' => UserRole::Owner->value,
     ]);
 

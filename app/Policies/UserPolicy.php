@@ -22,8 +22,16 @@ class UserPolicy
             return $user->id === $model->id;
         }
 
-        return $model->role !== UserRole::SuperAdmin
-            && (int) $user->shop_id === (int) $model->shop_id;
+        if ($user->role === UserRole::Owner) {
+            if ($user->id === $model->id) {
+                return true;
+            }
+
+            return $model->role === UserRole::Seller
+                && (int) $user->shop_id === (int) $model->shop_id;
+        }
+
+        return false;
     }
 
     public function create(User $user): bool
@@ -41,8 +49,16 @@ class UserPolicy
             return $user->id === $model->id;
         }
 
-        return $model->role !== UserRole::SuperAdmin
-            && (int) $user->shop_id === (int) $model->shop_id;
+        if ($user->role === UserRole::Owner) {
+            if ($user->id === $model->id) {
+                return true;
+            }
+
+            return $model->role === UserRole::Seller
+                && (int) $user->shop_id === (int) $model->shop_id;
+        }
+
+        return false;
     }
 
     public function delete(User $user, User $model): bool
@@ -55,7 +71,8 @@ class UserPolicy
             return false;
         }
 
-        return $model->role !== UserRole::SuperAdmin
+        return $user->role === UserRole::Owner
+            && $model->role === UserRole::Seller
             && (int) $user->shop_id === (int) $model->shop_id;
     }
 

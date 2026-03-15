@@ -115,14 +115,24 @@ Super Admin
 
 - manage shops
 - view all data
+- manage owners and sellers
+- manage currencies and settings
+- access all reports
 
 Owner
 
 - manage products
 - manage sales
 - manage expenses
+- manage purchases
+- manage debts
+- manage only sellers in own shop
+- view own shop reports and settings
 
 Seller
 
 - create sales
 - view products
+- view stock
+- view own shop
+- view and update own profile

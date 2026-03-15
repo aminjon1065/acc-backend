@@ -68,7 +68,10 @@ Global administrator of the platform.
 
 Permissions:
 
+- full access to all API modules
 - manage shops
+- attach owners to shops
+- manage all users across all shops
 - view system analytics
 - suspend shops
 - access all data
@@ -86,7 +89,9 @@ Permissions:
 - manage sales
 - manage expenses
 - manage debts
-- manage shop users
+- manage only seller users in own shop
+- view own shop profile
+- view own shop reports and settings
 
 ---
 
@@ -99,11 +104,17 @@ Permissions:
 - create sales
 - view products
 - view stock
+- view own shop profile
+- view and update own profile
 
 Restrictions:
 
 - cannot manage users
-- cannot access global reports
+- cannot manage products
+- cannot manage purchases
+- cannot manage expenses
+- cannot manage debts
+- cannot access reports
 
 ---
 

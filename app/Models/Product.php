@@ -25,6 +25,7 @@ class Product extends Model
         'sale_price',
         'stock_quantity',
         'low_stock_alert',
+        'image_path',
     ];
 
     /**

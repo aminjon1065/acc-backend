@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Models\Product;
 use App\Models\User;
+use App\UserRole;
 
 class ProductPolicy
 {
@@ -19,17 +20,17 @@ class ProductPolicy
 
     public function create(User $user): bool
     {
-        return $this->isOperationalRole($user);
+        return $this->isOwnerOrAdmin($user);
     }
 
     public function update(User $user, Product $product): bool
     {
-        return $user->isSuperAdmin() || $this->inSameShop($user, $product->shop_id);
+        return $user->isSuperAdmin() || ($user->role === UserRole::Owner && $this->inSameShop($user, $product->shop_id));
     }
 
     public function delete(User $user, Product $product): bool
     {
-        return $user->isSuperAdmin() || $this->inSameShop($user, $product->shop_id);
+        return $user->isSuperAdmin() || ($user->role === UserRole::Owner && $this->inSameShop($user, $product->shop_id));
     }
 
     public function restore(User $user, Product $product): bool
@@ -45,6 +46,11 @@ class ProductPolicy
     private function isOperationalRole(User $user): bool
     {
         return $user->isSuperAdmin() || $user->shop_id !== null;
+    }
+
+    private function isOwnerOrAdmin(User $user): bool
+    {
+        return $user->isSuperAdmin() || $user->role === UserRole::Owner;
     }
 
     private function inSameShop(User $user, ?int $shopId): bool

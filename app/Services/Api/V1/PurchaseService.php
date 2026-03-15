@@ -5,11 +5,15 @@ namespace App\Services\Api\V1;
 use App\Models\Purchase;
 use App\Models\User;
 use App\Repositories\Api\V1\PurchaseRepository;
+use App\Services\AuditLogger;
 use Illuminate\Support\Facades\DB;
 
 class PurchaseService
 {
-    public function __construct(private readonly PurchaseRepository $purchases) {}
+    public function __construct(
+        private readonly PurchaseRepository $purchases,
+        private readonly AuditLogger $auditLogger,
+    ) {}
 
     /**
      * @param  array<int, array<string, mixed>>  $items
@@ -50,7 +54,15 @@ class PurchaseService
 
             $purchase->update(['total_amount' => $totalAmount]);
 
-            return $purchase->fresh(['items.product']);
+            $freshPurchase = $purchase->fresh(['items.product']);
+
+            $this->auditLogger->log('purchases.created', $actor, $freshPurchase, [
+                'supplier_name' => $supplierName,
+                'items_count' => count($items),
+                'total_amount' => (float) $freshPurchase->total_amount,
+            ], $shopId);
+
+            return $freshPurchase;
         });
     }
 }

@@ -6,11 +6,16 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\UpdateShopSettingRequest;
 use App\Http\Resources\Api\V1\ShopSettingResource;
 use App\Models\ShopSetting;
+use App\Services\AuditLogger;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
 class ShopSettingController extends Controller
 {
+    public function __construct(
+        private readonly AuditLogger $auditLogger,
+    ) {}
+
     public function show(Request $request): ShopSettingResource
     {
         $shopId = $this->resolveShopId($request);
@@ -32,8 +37,15 @@ class ShopSettingController extends Controller
             ['default_currency' => 'TJS', 'tax_percent' => 0]
         );
 
+        $before = $setting->only(['default_currency', 'tax_percent']);
+
         $setting->fill($request->validated());
         $setting->save();
+
+        $this->auditLogger->log('settings.updated', $request->user(), $setting, [
+            'before' => $before,
+            'after' => $setting->only(['default_currency', 'tax_percent']),
+        ], $shopId);
 
         return new ShopSettingResource($setting);
     }

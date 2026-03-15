@@ -4,6 +4,7 @@ namespace App\Http\Requests\Api\V1;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\File;
 
 class StoreProductRequest extends FormRequest
 {
@@ -37,6 +38,7 @@ class StoreProductRequest extends FormRequest
             'sale_price' => ['required', 'numeric', 'min:0'],
             'stock_quantity' => ['required', 'numeric', 'min:0'],
             'low_stock_alert' => ['nullable', 'numeric', 'min:0'],
+            'image' => ['nullable', File::image()->max(5 * 1024)],
         ];
     }
 

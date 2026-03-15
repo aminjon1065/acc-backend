@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\LoginRequest;
 use App\Models\User;
+use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -12,6 +13,10 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    public function __construct(
+        private readonly AuditLogger $auditLogger,
+    ) {}
+
     public function login(LoginRequest $request): JsonResponse
     {
         $user = User::query()->where('email', $request->string('email')->toString())->first();
@@ -21,7 +26,24 @@ class AuthController extends Controller
                 'email' => ['Invalid credentials.'],
             ]);
         }
-        $token = $user->createToken($request->input('device_name', 'mobile-app'))->plainTextToken;
+
+        $user->loadMissing('shop');
+
+        if (! $user->isSuperAdmin() && $user->shop?->status !== 'active') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Shop is suspended.',
+                'errors' => [],
+            ], 403);
+        }
+
+        $newToken = $user->createToken($request->input('device_name', 'mobile-app'));
+        $token = $newToken->plainTextToken;
+
+        $this->auditLogger->log('auth.login', $user, metadata: [
+            'device_name' => $request->input('device_name', 'mobile-app'),
+            'token_id' => $newToken->accessToken->id,
+        ]);
 
         return response()->json([
             'success' => true,
@@ -45,7 +67,15 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()?->delete();
+        $user = $request->user();
+        $token = $user->currentAccessToken();
+
+        $this->auditLogger->log('auth.logout', $user, metadata: [
+            'token_id' => $token?->id,
+            'device_name' => $token?->name,
+        ]);
+
+        $token?->delete();
 
         return response()->json([
             'success' => true,
@@ -57,8 +87,19 @@ class AuthController extends Controller
     public function refresh(Request $request): JsonResponse
     {
         $user = $request->user();
-        $request->user()->currentAccessToken()?->delete();
-        $token = $user->createToken($request->input('device_name', 'mobile-app'))->plainTextToken;
+        $currentToken = $request->user()->currentAccessToken();
+        $previousTokenId = $currentToken?->id;
+
+        $currentToken?->delete();
+
+        $newToken = $user->createToken($request->input('device_name', 'mobile-app'));
+        $token = $newToken->plainTextToken;
+
+        $this->auditLogger->log('auth.refresh', $user, metadata: [
+            'previous_token_id' => $previousTokenId,
+            'token_id' => $newToken->accessToken->id,
+            'device_name' => $request->input('device_name', 'mobile-app'),
+        ]);
 
         return response()->json([
             'success' => true,
