@@ -15,13 +15,14 @@ class DebtService
         private readonly AuditLogger $auditLogger,
     ) {}
 
-    public function createDebt(User $actor, int $shopId, string $personName, float $openingBalance): Debt
+    public function createDebt(User $actor, int $shopId, string $personName, string $direction, float $openingBalance): Debt
     {
-        return DB::transaction(function () use ($actor, $shopId, $personName, $openingBalance): Debt {
+        return DB::transaction(function () use ($actor, $shopId, $personName, $direction, $openingBalance): Debt {
             $debt = $this->debts->create([
                 'shop_id' => $shopId,
                 'user_id' => $actor->id,
                 'person_name' => $personName,
+                'direction' => $direction,
                 'balance' => $openingBalance,
             ]);
 
@@ -39,6 +40,7 @@ class DebtService
 
             $this->auditLogger->log('debts.created', $actor, $freshDebt, [
                 'person_name' => $personName,
+                'direction' => $direction,
                 'opening_balance' => $openingBalance,
                 'balance' => (float) $freshDebt->balance,
             ], $shopId);

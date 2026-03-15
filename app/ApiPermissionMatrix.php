@@ -10,6 +10,9 @@ final class ApiPermissionMatrix
      * @var array<string, array<string, array<int, string>>>
      */
     private const MATRIX = [
+        'dashboard' => [
+            'view' => ['super_admin', 'owner', 'seller'],
+        ],
         'products' => [
             'viewAny' => ['super_admin', 'owner', 'seller'],
             'view' => ['super_admin', 'owner', 'seller'],
@@ -30,10 +33,10 @@ final class ApiPermissionMatrix
             'update' => ['super_admin'],
         ],
         'debts' => [
-            'viewAny' => ['super_admin', 'owner'],
-            'view' => ['super_admin', 'owner'],
-            'create' => ['super_admin', 'owner'],
-            'update' => ['super_admin', 'owner'],
+            'viewAny' => ['super_admin', 'owner', 'seller'],
+            'view' => ['super_admin', 'owner', 'seller'],
+            'create' => ['super_admin', 'owner', 'seller'],
+            'update' => ['super_admin', 'owner', 'seller'],
         ],
         'purchases' => [
             'viewAny' => ['super_admin', 'owner'],

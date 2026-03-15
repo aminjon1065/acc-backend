@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CurrencyController;
+use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DebtController;
 use App\Http\Controllers\Api\V1\ExpenseController;
 use App\Http\Controllers\Api\V1\ProductController;
@@ -21,9 +22,12 @@ Route::prefix('v1')->group(function (): void {
         Route::post('auth/logout', [AuthController::class, 'logout']);
         Route::post('auth/refresh', [AuthController::class, 'refresh']);
 
+        Route::get('dashboard', [DashboardController::class, 'show'])->middleware('api_ability:dashboard,view');
+
         Route::get('products', [ProductController::class, 'index'])->middleware('api_ability:products,viewAny');
         Route::post('products', [ProductController::class, 'store'])->middleware('api_ability:products,create');
         Route::get('products/{product}', [ProductController::class, 'show'])->middleware('api_ability:products,view');
+        Route::get('products/{product}/movements', [ProductController::class, 'movements'])->middleware('api_ability:products,view');
         Route::match(['put', 'patch'], 'products/{product}', [ProductController::class, 'update'])->middleware('api_ability:products,update');
         Route::delete('products/{product}', [ProductController::class, 'destroy'])->middleware('api_ability:products,delete');
 

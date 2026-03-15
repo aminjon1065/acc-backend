@@ -5,6 +5,7 @@ namespace App\Repositories\Api\V1;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 
 class ProductRepository
@@ -28,12 +29,33 @@ class ProductRepository
         return $this->queryForUser($user)->findOrFail($id);
     }
 
-    public function paginateForUser(User $user, int $limit): LengthAwarePaginator
+    public function paginateForUser(User $user, int $limit, ?Request $request = null): LengthAwarePaginator
     {
-        return $this->queryForUser($user)
-            ->latest('id')
-            ->paginate($limit)
-            ->withQueryString();
+        $query = $this->queryForUser($user);
+
+        if ($request !== null) {
+            $search = trim((string) $request->input('search', ''));
+            $stockStatus = $request->string('stock_status')->toString();
+
+            if ($search !== '') {
+                $query->where(function (Builder $builder) use ($search): void {
+                    $builder
+                        ->where('name', 'like', "%{$search}%")
+                        ->orWhere('code', 'like', "%{$search}%");
+                });
+            }
+
+            match ($stockStatus) {
+                'low_stock' => $query
+                    ->where('stock_quantity', '>', 0)
+                    ->whereColumn('stock_quantity', '<=', 'low_stock_alert'),
+                'out_of_stock' => $query->where('stock_quantity', '<=', 0),
+                'in_stock' => $query->where('stock_quantity', '>', 0),
+                default => null,
+            };
+        }
+
+        return $query->latest('id')->paginate($limit)->withQueryString();
     }
 
     /**

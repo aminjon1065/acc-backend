@@ -58,6 +58,7 @@ class DebtController extends Controller
             $actor,
             (int) $shopId,
             $request->validated('person_name'),
+            $request->string('direction')->toString() ?: 'receivable',
             (float) $request->input('opening_balance', 0),
         );
 

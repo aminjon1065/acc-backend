@@ -7,6 +7,8 @@ use App\Http\Requests\Api\V1\StoreProductRequest;
 use App\Http\Requests\Api\V1\UpdateProductRequest;
 use App\Http\Resources\Api\V1\ProductResource;
 use App\Models\Product;
+use App\Models\PurchaseItem;
+use App\Models\SaleItem;
 use App\Repositories\Api\V1\ProductRepository;
 use App\Services\Api\V1\ProductService;
 use Illuminate\Http\JsonResponse;
@@ -27,7 +29,7 @@ class ProductController extends Controller
     {
         $this->authorize('viewAny', Product::class);
 
-        $products = $this->products->paginateForUser($request->user(), $request->integer('limit', 20));
+        $products = $this->products->paginateForUser($request->user(), $request->integer('limit', 20), $request);
 
         return ProductResource::collection($products);
     }
@@ -83,6 +85,61 @@ class ProductController extends Controller
             'success' => true,
             'message' => 'Product deleted.',
             'data' => null,
+        ]);
+    }
+
+    public function movements(Request $request, Product $product): JsonResponse
+    {
+        $this->authorize('view', $product);
+
+        $scoped = $this->products->findForUser($request->user(), $product->id);
+
+        $purchaseMovements = PurchaseItem::query()
+            ->with(['purchase.user'])
+            ->where('product_id', $scoped->id)
+            ->get()
+            ->map(function (PurchaseItem $item): array {
+                return [
+                    'type' => 'purchase',
+                    'quantity' => (float) $item->quantity,
+                    'price' => (float) $item->price,
+                    'total' => (float) $item->total,
+                    'created_at' => $item->created_at?->toISOString(),
+                    'reference_id' => $item->purchase_id,
+                    'reference_type' => 'purchase',
+                    'actor_name' => $item->purchase?->user?->name,
+                ];
+            });
+
+        $saleMovements = SaleItem::query()
+            ->with(['sale.user'])
+            ->where('product_id', $scoped->id)
+            ->get()
+            ->map(function (SaleItem $item): array {
+                return [
+                    'type' => 'sale',
+                    'quantity' => (float) $item->quantity,
+                    'price' => (float) $item->price,
+                    'total' => (float) $item->total,
+                    'created_at' => $item->created_at?->toISOString(),
+                    'reference_id' => $item->sale_id,
+                    'reference_type' => 'sale',
+                    'actor_name' => $item->sale?->user?->name,
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'message' => '',
+            'data' => [
+                'product_id' => $scoped->id,
+                'current_stock' => (float) $scoped->stock_quantity,
+                'movements' => $purchaseMovements
+                    ->concat($saleMovements)
+                    ->sortByDesc('created_at')
+                    ->values()
+                    ->all(),
+            ],
         ]);
     }
 }

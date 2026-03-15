@@ -22,6 +22,7 @@ class DebtFactory extends Factory
             'shop_id' => Shop::factory(),
             'user_id' => User::factory(),
             'person_name' => fake()->name(),
+            'direction' => fake()->randomElement(['receivable', 'payable']),
             'balance' => fake()->randomFloat(2, 0, 3000),
         ];
     }

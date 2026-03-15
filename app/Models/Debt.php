@@ -19,6 +19,7 @@ class Debt extends Model
         'shop_id',
         'user_id',
         'person_name',
+        'direction',
         'balance',
     ];
 
@@ -28,6 +29,7 @@ class Debt extends Model
     protected function casts(): array
     {
         return [
+            'direction' => 'string',
             'balance' => 'decimal:2',
         ];
     }

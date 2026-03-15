@@ -24,6 +24,7 @@ class StoreDebtRequest extends FormRequest
         return [
             'shop_id' => ['nullable', 'integer', 'exists:shops,id'],
             'person_name' => ['required', 'string', 'max:255'],
+            'direction' => ['nullable', 'string', 'in:receivable,payable'],
             'opening_balance' => ['nullable', 'numeric', 'min:0'],
         ];
     }

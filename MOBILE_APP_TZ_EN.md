@@ -43,8 +43,12 @@ Must have access to everything available to the seller, plus:
 
 ### 2.3. Super Admin
 
-For `super_admin`, the main working interface should remain in the web/admin panel.
-The mobile app may provide only limited access or no dedicated store workflow.
+For `super_admin`, the mobile app shows a **multi-shop overview screen** on login:
+
+- list of all shops with name and number of sellers;
+- tap a shop → switch context into that shop's dashboard and work as an owner.
+
+The main administrative panel (user management, billing, etc.) remains in the web panel.
 
 ## 3. Bottom Navigation
 
@@ -74,30 +78,42 @@ The dashboard must be the most useful screen in the app.
 
 #### Top section
 
-- store name;
-- greeting;
-- date;
-- current shift if needed.
+- store name with shop-switcher dropdown (for super_admin);
+- period filter tabs: **День / Неделя / Месяц / Год / Период** — all KPI cards on the dashboard must react to this filter.
 
-#### Main KPI cards
+#### Main KPI cards (4 cards, 2×2 grid)
 
-- today sales;
-- today expenses;
-- profit;
-- total debts.
+- sales / revenue (Продажи / Доход);
+- cost of goods sold (Себестоимость);
+- expenses (Расходы);
+- net profit (Чистая прибыль).
 
-#### Quick actions
+#### Stock summary card
 
-- `New Sale`
-- `Add Product`
-- `Add Expense`
-- `Add Debt`
+A single wide card showing:
+
+- total product count (общее количество товаров);
+- total stock cost value (итого себестоимость);
+- total stock sales value (итого по продажным ценам).
+
+#### Debt summary card
+
+Two columns in one card:
+
+- **Мне должны** (customers owe me): total amount;
+- **Я должен** (I owe suppliers): total amount;
+- net balance shown below as a single line.
+
+#### Quick actions (3 buttons)
+
+- `Приход товара` (Receive stock / New Purchase)
+- `Продажа +` (New Sale)
+- `Добавить расход` (Add Expense)
 
 #### Alerts
 
 - low stock products;
-- unpaid debts;
-- low activity alerts if needed.
+- unpaid debts.
 
 #### Recent activity
 
@@ -109,18 +125,24 @@ The dashboard must be the most useful screen in the app.
 
 For mobile convenience, an aggregated endpoint is recommended:
 
-- `GET /api/v1/dashboard`
+- `GET /api/v1/dashboard?period={day|week|month|year|custom}&date_from=&date_to=`
 
 Suggested response structure:
 
-- `today_sales_total`
-- `today_expenses_total`
-- `today_profit`
-- `debts_total`
+- `period_sales_total`
+- `period_expenses_total`
+- `period_profit`
+- `period_cogs` (cost of goods sold)
+- `debts_receivable` (customers owe me)
+- `debts_payable` (I owe suppliers)
+- `debts_net`
+- `stock_total_qty`
+- `stock_total_cost`
+- `stock_total_sales_value`
 - `low_stock_count`
-- `recent_sales`
-- `recent_expenses`
-- `low_stock_products`
+- `recent_sales[]`
+- `recent_expenses[]`
+- `low_stock_products[]`
 
 ## 5. Products Section
 
@@ -167,14 +189,20 @@ Must include:
 
 Fields:
 
-- image;
-- name;
-- code;
-- unit;
-- cost price;
-- sale price;
-- starting stock;
-- minimum stock threshold.
+- image (photo picker: gallery or camera);
+- name *(required)*;
+- code / barcode (Артикул / штрих-код);
+- unit of measure (Единица измерения);
+- quantity in stock (Количество на складе);
+- cost price / purchase price *(required)*;
+- sale price — set via **one of three pricing modes**:
+  - `%` — percentage markup over cost price (auto-calculated);
+  - Fixed price (Фиксированная цена) — enter final sale price manually;
+  - Manual markup (Ручная наценка) — enter markup amount in currency, auto-calculate result;
+  - A **"Calculate markup"** (Рассчитать наценку) helper button must be present;
+- minimum stock threshold (Порог остатка);
+- **Clearance flag** (Распродаётся) — checkbox; when active, this product can be sold at a discounted / custom price during sale creation;
+- notes (Заметки) — optional free-text field.
 
 ### 5.4. Backend
 
@@ -265,20 +293,43 @@ Each record should show:
 
 ### 7.2. Create sale screen
 
-Must include:
+The sale type is selected at the top: **Products** or **Services**.
 
-- product search;
-- add products to cart;
-- quantity;
-- price;
-- discount;
-- paid amount;
+#### Sale of products (Расход товара)
+
+- date *(required)*;
+- product search by name, code, or barcode;
+- add products to cart; each cart item shows:
+  - product name;
+  - quantity (−/+);
+  - price — behavior depends on the product's pricing mode:
+    - **Fixed / % markup**: price is pre-filled automatically, read-only;
+    - **Manual markup**: price field is editable by the seller;
+    - **Clearance** (Распродаётся): price field is always editable;
+  - line total (auto-calculated);
+- global discount field (Скидка);
+- total amount (Итого);
+- paid amount (Оплачено);
+- debt — auto-calculated as `total − paid`;
+- notes (Заметки);
 - payment type:
   - `cash`
   - `card`
   - `transfer`
-- final total;
-- automatically calculated debt when payment is incomplete.
+- `Save` button.
+
+#### Sale of services (Продажа услуг)
+
+- service name (Наименование);
+- unit of measure (Единица);
+- quantity (Количество);
+- price (Цена);
+- total (Сумма);
+- discount (Скидка);
+- paid amount (Оплачено);
+- debt (Долг — auto-calculated);
+- notes (Заметки);
+- `Save` button.
 
 ### 7.3. Sale details screen
 
@@ -293,6 +344,86 @@ Must include:
 - debt amount;
 - date;
 - sale author.
+
+A **Share** (Поделиться) button must be present on this screen to export/send the receipt.
+
+#### Receipt format
+
+When sharing, the app generates a plain-text or simple formatted receipt containing:
+
+- store name;
+- sale date and number;
+- itemized product list (name, qty, price, line total);
+- discount (if any);
+- total amount;
+- paid amount;
+- debt remainder (if any).
+
+The receipt is shared via the system share sheet (WhatsApp, Telegram, SMS, etc.).
+
+### 7.4. Customers / Contacts
+
+A customer list is required to support quick selection during sale creation and debt tracking.
+
+#### Customer list screen
+
+- search by name or phone;
+- customer list showing: name, phone, total outstanding debt balance;
+- `Add customer` button.
+
+#### Customer card / form
+
+Fields:
+
+- name *(required)*;
+- phone number;
+- notes.
+
+#### Integration points
+
+- Sale creation: customer field uses the contact list for auto-fill / quick selection;
+- Debts section: debt records link to a customer contact, showing their full transaction history in one place.
+
+#### Backend
+
+Recommended endpoints:
+
+- `GET /api/v1/customers` — list with search
+- `POST /api/v1/customers` — create
+- `PATCH /api/v1/customers/{id}` — update
+- `GET /api/v1/customers/{id}` — detail with debt summary
+
+### 7.5. Return / Refund (Возврат)
+
+Allows reversing a completed sale — either fully or partially.
+
+#### Return form
+
+Fields:
+
+- link to original sale (search by sale ID or customer);
+- list of items from the original sale with a quantity field for each (how many to return);
+- return reason (Причина возврата) — free text;
+- refund method: cash / card / transfer / offset against debt;
+- `Save` button.
+
+#### Logic
+
+- Returned stock quantity is restored to inventory automatically;
+- If a refund is issued, the paid amount decreases accordingly;
+- If the sale had a debt balance, a return reduces or cancels it;
+- The return is recorded in product movement history with type `return`.
+
+#### Access
+
+- `owner` and `super_admin` only; sellers cannot create returns.
+
+#### Backend
+
+Recommended endpoint:
+
+- `POST /api/v1/sales/{sale}/return`
+  - body: `{ items: [{ product_id, quantity }], reason, refund_method }`
 
 ## 8. Debts Section
 
@@ -322,11 +453,11 @@ Must include:
 
 - person name;
 - current balance;
-- transaction history;
-- actions:
-  - `Add Debt`
-  - `Repayment`
-  - `Correction`
+- transaction history (list of operations with date, amount, note);
+- two action buttons:
+  - **Дать долг ↑** (Give / add debt) — increases the balance;
+  - **Взять долг ↓** (Receive / repay debt) — decreases the balance;
+- each operation form contains: amount (Сумма), date (Дата), note (Заметка).
 
 ### 8.3. Status logic
 
@@ -386,26 +517,33 @@ This is the owner-side inbound stock section.
 
 ### 10.1. Purchases list screen
 
-Must include:
+Each record shows:
 
-- supplier;
-- total amount;
 - date;
-- number of positions.
+- supplier name;
+- total amount;
+- number of line items (positions).
+
+A **Share** (Поделиться) button must be available on the purchase detail screen to export/share the purchase document.
 
 ### 10.2. Create purchase screen
 
-Fields:
+The purchase is entered as a table with columns:
 
-- supplier;
-- products list;
-- quantity;
-- price;
-- total.
+| # | Name / Code / Barcode | Unit | Qty | Price | Total |
+|---|---|---|---|---|---|
+
+Fields at the top:
+
+- date *(required)*;
+- supplier name.
+
+Footer row shows **Итого** (grand total).
 
 ### 10.3. Important logic
 
-After a purchase is created, product stock must be updated automatically.
+- After a purchase is created, product stock is updated automatically.
+- If a new product is being received for the first time, it can optionally be created inline from the purchase screen.
 
 ## 11. Reports Section
 
@@ -437,7 +575,45 @@ Recommended format:
 
 Complex BI-style analytics should not overload the mobile UI.
 
-## 12. More Section
+## 12. Stock Write-off (Списание товара)
+
+This is a dedicated feature for removing stock that was lost, damaged, or consumed internally.
+
+### 12.1. Purpose
+
+The owner or authorized user can manually reduce the stock of a product without creating a sale. The reason is logged for audit purposes.
+
+### 12.2. Write-off form
+
+Fields:
+
+- product name (search by name or code);
+- quantity to write off (Количество);
+- notes / reason (Заметка);
+- `Save` button.
+
+### 12.3. Logic
+
+- Stock quantity is reduced immediately on save.
+- The write-off is recorded in the product movement history with type `write_off`.
+- Access: `owner` and `super_admin` only.
+
+### 12.4. Backend
+
+Recommended endpoint:
+
+- `POST /api/v1/products/{product}/write-off`
+  - body: `{ quantity, note }`
+
+### 12.5. Seller report (Отчёт продавца)
+
+A lightweight report available to sellers showing their own performance:
+
+- total number of products sold (Количество проданных товаров);
+- total sales amount (Сумма продаж);
+- can be toggled between showing percentage contribution and absolute value.
+
+## 13. More Section
 
 Must include:
 
@@ -446,13 +622,14 @@ Must include:
 - users;
 - currency;
 - store;
+- **write-off** (Списание) — owner only;
 - logout.
 
 For `seller`, the list must be shorter and should exclude owner/admin features.
 
-## 13. UI/UX Requirements
+## 14. UI/UX Requirements
 
-### 13.1. General principles
+### 14.1. General principles
 
 The interface must be:
 
@@ -461,7 +638,7 @@ The interface must be:
 - minimal;
 - focused on frequent daily actions.
 
-### 13.2. Rules
+### 14.2. Rules
 
 - minimal nesting;
 - minimal heavy tables;
@@ -471,7 +648,7 @@ The interface must be:
 - product images should be used in product lists and product details;
 - sale creation must require as few steps as possible.
 
-## 14. What already exists in the backend
+## 15. What already exists in the backend
 
 The current backend already provides a solid base for:
 
@@ -486,52 +663,64 @@ The current backend already provides a solid base for:
 - reports;
 - product image upload.
 
-## 15. Recommended backend additions
+## 16. Recommended backend additions
 
 For a better mobile UX, the following endpoints are recommended:
 
-- `GET /api/v1/dashboard`
+- `GET /api/v1/dashboard?period=&date_from=&date_to=` (with debt split + stock summary)
 - `GET /api/v1/products/{product}/movements`
-- `GET /api/v1/products/low-stock` or an equivalent filter
-- `GET /api/v1/sales/recent` or include it in dashboard
-- `GET /api/v1/debts/summary` or include it in dashboard
+- `GET /api/v1/products?filter=low_stock` or equivalent
+- `POST /api/v1/products/{product}/write-off`
+- `POST /api/v1/sales` — support service type via a `type` field (`product` | `service`)
+- `GET /api/v1/debts/summary` (receivable vs payable totals)
 
-## 16. Development Priority
+## 17. Development Priority
 
 ### Phase 1
 
 - login;
-- dashboard;
-- products;
+- dashboard (with period filter + split debt card + stock summary);
+- products (with pricing modes and clearance flag);
 - product details;
-- sales;
-- debts.
+- sales of products;
+- debts (with give/take buttons).
 
 ### Phase 2
 
 - expenses;
-- purchases;
+- purchases (table view + share);
 - product movement;
-- simple report.
+- service sales;
+- simple report;
+- **customer / contacts list** — with sale auto-fill and debt linking;
+- **sale receipt sharing** — share button on sale details generating plain-text receipt for WhatsApp/Telegram.
 
 ### Phase 3
 
-- users;
-- settings;
-- advanced reports.
+- stock write-off (списание);
+- **return / refund** — partial or full return with stock restoration and payment reversal;
+- seller report;
+- users management;
+- store settings;
+- advanced reports;
+- **barcode camera scanner** — scan product barcodes via camera on sale creation, purchase entry, and product lookup (replaces manual barcode typing).
 
-## 17. Final MVP Scope
+## 18. Final MVP Scope
 
 For the first complete version, the recommended screen set is:
 
 - login;
-- dashboard;
-- products;
+- dashboard (with period filter, split debts, stock summary);
+- products (with 3 pricing modes);
 - product details;
 - product movement;
-- sales;
+- sales (products + services + receipt sharing);
+- customers / contacts;
 - debts;
 - expenses;
+- purchases;
+- stock write-off;
+- return / refund;
 - `More` section.
 
 This scope covers the main daily store workflow and matches the client expectations from the provided sketches and references.

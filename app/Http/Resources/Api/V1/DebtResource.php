@@ -19,6 +19,7 @@ class DebtResource extends JsonResource
             'shop_id' => $this->shop_id,
             'user_id' => $this->user_id,
             'person_name' => $this->person_name,
+            'direction' => $this->direction,
             'balance' => (float) $this->balance,
             'transactions' => $this->whenLoaded('transactions', function () {
                 return $this->transactions->map(fn ($transaction) => [

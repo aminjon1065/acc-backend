@@ -25,6 +25,7 @@ class ProductResource extends JsonResource
             'sale_price' => (float) $this->sale_price,
             'stock_quantity' => (float) $this->stock_quantity,
             'low_stock_alert' => (float) $this->low_stock_alert,
+            'is_low_stock' => (float) $this->stock_quantity <= (float) $this->low_stock_alert,
             'image_path' => $this->image_path,
             'image_url' => $this->image_path ? Storage::disk('public')->url($this->image_path) : null,
             'created_at' => $this->created_at?->toISOString(),
