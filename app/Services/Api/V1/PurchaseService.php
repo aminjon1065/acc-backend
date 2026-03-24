@@ -49,6 +49,13 @@ class PurchaseService
                 ]);
 
                 $product->increment('stock_quantity', $quantity);
+                $product->update(['cost_price' => $price]);
+
+                if (isset($item['markup_percent']) && $item['markup_percent'] !== null) {
+                    $markupPercent = (float) $item['markup_percent'];
+                    $product->update(['sale_price' => round($price * (1 + $markupPercent / 100), 2)]);
+                }
+
                 $totalAmount += $lineTotal;
             }
 

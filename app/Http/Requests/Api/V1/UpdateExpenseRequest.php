@@ -24,7 +24,7 @@ class UpdateExpenseRequest extends FormRequest
         return [
             'name' => ['sometimes', 'required', 'string', 'max:255'],
             'quantity' => ['sometimes', 'required', 'numeric', 'gt:0'],
-            'price' => ['sometimes', 'required', 'numeric', 'min:0'],
+            'price' => ['sometimes', 'required', 'numeric', 'gt:0'],
             'note' => ['sometimes', 'nullable', 'string'],
         ];
     }

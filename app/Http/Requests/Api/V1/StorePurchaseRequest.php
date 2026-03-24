@@ -28,6 +28,7 @@ class StorePurchaseRequest extends FormRequest
             'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
             'items.*.price' => ['required', 'numeric', 'min:0'],
+            'items.*.markup_percent' => ['nullable', 'numeric', 'min:0', 'max:1000'],
         ];
     }
 

@@ -52,7 +52,10 @@ class DebtService
     public function storeTransaction(Debt $debt, User $actor, string $type, float $amount, ?string $note): Debt
     {
         return DB::transaction(function () use ($debt, $actor, $type, $amount, $note): Debt {
-            $delta = $type === 'give' ? $amount : -$amount;
+            $delta = match ($type) {
+                'give' => $amount,
+                'take', 'repay' => -$amount,
+            };
 
             $debt->transactions()->create([
                 'shop_id' => $debt->shop_id,

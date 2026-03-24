@@ -2,6 +2,7 @@
 
 namespace App\Services\Api\V1;
 
+use App\Models\Debt;
 use App\Models\Sale;
 use App\Models\User;
 use App\Repositories\Api\V1\SaleRepository;
@@ -74,6 +75,12 @@ class SaleService
                 $subTotal += $lineTotal;
             }
 
+            if ($discount > $subTotal) {
+                throw ValidationException::withMessages([
+                    'discount' => ["Discount cannot exceed subtotal ({$subTotal})."],
+                ]);
+            }
+
             $total = max($subTotal - $discount, 0);
             $debt = max($total - $paid, 0);
 
@@ -81,6 +88,40 @@ class SaleService
                 'total' => $total,
                 'debt' => $debt,
             ]);
+
+            if ($debt > 0 && $customerName !== null) {
+                $existingDebt = Debt::query()
+                    ->where('shop_id', $shopId)
+                    ->where('person_name', $customerName)
+                    ->where('direction', 'receivable')
+                    ->first();
+
+                if ($existingDebt) {
+                    $existingDebt->increment('balance', $debt);
+                    $existingDebt->transactions()->create([
+                        'shop_id' => $shopId,
+                        'user_id' => $actor->id,
+                        'type' => 'give',
+                        'amount' => $debt,
+                        'note' => "Sale #{$sale->id}",
+                    ]);
+                } else {
+                    $newDebt = Debt::query()->create([
+                        'shop_id' => $shopId,
+                        'user_id' => $actor->id,
+                        'person_name' => $customerName,
+                        'direction' => 'receivable',
+                        'balance' => $debt,
+                    ]);
+                    $newDebt->transactions()->create([
+                        'shop_id' => $shopId,
+                        'user_id' => $actor->id,
+                        'type' => 'give',
+                        'amount' => $debt,
+                        'note' => "Sale #{$sale->id}",
+                    ]);
+                }
+            }
 
             $freshSale = $sale->fresh(['items.product']);
 

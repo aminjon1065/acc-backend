@@ -74,7 +74,7 @@ class DashboardService
                 ->count(),
             'recent_sales' => $this->recentSales($salesQuery),
             'recent_expenses' => $this->recentExpenses($expensesQuery),
-            'recent_debt_transactions' => $this->recentDebtTransactions($shopId),
+            'recent_debt_transactions' => $this->recentDebtTransactions($shopId, $from, $to),
             'low_stock_products' => $this->lowStockProducts($productsQuery),
             'unpaid_debts' => $this->unpaidDebts($debtsQuery),
         ];
@@ -187,11 +187,12 @@ class DashboardService
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function recentDebtTransactions(?int $shopId): array
+    private function recentDebtTransactions(?int $shopId, CarbonImmutable $from, CarbonImmutable $to): array
     {
         return DebtTransaction::query()
             ->with(['debt', 'user'])
             ->when($shopId !== null, fn (Builder $query) => $query->where('shop_id', $shopId))
+            ->whereBetween('created_at', [$from, $to])
             ->latest('created_at')
             ->limit(5)
             ->get()
