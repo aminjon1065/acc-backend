@@ -41,13 +41,24 @@ class SaleService
                 'payment_type' => $paymentType,
             ]);
 
+            $productIds = collect($items)->pluck('product_id')->unique()->values();
+
+            $products = $this->sales
+                ->queryProductsForShop($actor, $shopId)
+                ->whereIn('id', $productIds)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+
             $subTotal = 0.0;
 
             foreach ($items as $item) {
-                $product = $this->sales
-                    ->queryProductsForShop($actor, $shopId)
-                    ->lockForUpdate()
-                    ->findOrFail($item['product_id']);
+                $productId = $item['product_id'];
+                $product = $products->get($productId);
+
+                if (! $product) {
+                    throw (new \Illuminate\Database\Eloquent\ModelNotFoundException)->setModel(\App\Models\Product::class, $productId);
+                }
 
                 $quantity = (float) $item['quantity'];
                 $price = array_key_exists('price', $item)

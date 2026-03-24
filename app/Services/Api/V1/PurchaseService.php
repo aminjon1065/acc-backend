@@ -28,13 +28,24 @@ class PurchaseService
                 'total_amount' => 0,
             ]);
 
+            $productIds = collect($items)->pluck('product_id')->unique()->values();
+
+            $products = $this->purchases
+                ->queryProductsForShop($actor, $shopId)
+                ->whereIn('id', $productIds)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+
             $totalAmount = 0.0;
 
             foreach ($items as $item) {
-                $product = $this->purchases
-                    ->queryProductsForShop($actor, $shopId)
-                    ->lockForUpdate()
-                    ->findOrFail($item['product_id']);
+                $productId = $item['product_id'];
+                $product = $products->get($productId);
+
+                if (! $product) {
+                    throw (new \Illuminate\Database\Eloquent\ModelNotFoundException)->setModel(\App\Models\Product::class, $productId);
+                }
 
                 $quantity = (float) $item['quantity'];
                 $price = (float) $item['price'];

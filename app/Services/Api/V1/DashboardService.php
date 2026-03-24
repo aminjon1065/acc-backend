@@ -46,8 +46,24 @@ class DashboardService
         $costOfGoodsSold = (float) (clone $saleItemsQuery)
             ->selectRaw('COALESCE(SUM(sale_items.quantity * sale_items.cost_price), 0) as cogs')
             ->value('cogs');
-        $receivable = (float) (clone $debtsQuery)->where('direction', 'receivable')->sum('balance');
-        $payable = (float) (clone $debtsQuery)->where('direction', 'payable')->sum('balance');
+        $debtsStats = (clone $debtsQuery)
+            ->selectRaw("
+                COALESCE(SUM(CASE WHEN direction = 'receivable' THEN balance ELSE 0 END), 0) as receivable,
+                COALESCE(SUM(CASE WHEN direction = 'payable' THEN balance ELSE 0 END), 0) as payable
+            ")
+            ->first();
+
+        $receivable = (float) ($debtsStats->receivable ?? 0);
+        $payable = (float) ($debtsStats->payable ?? 0);
+
+        $productStats = (clone $productsQuery)
+            ->selectRaw('
+                COALESCE(SUM(stock_quantity), 0) as stock_total_qty,
+                COALESCE(SUM(stock_quantity * cost_price), 0) as stock_total_cost,
+                COALESCE(SUM(stock_quantity * sale_price), 0) as stock_total_sales_value,
+                SUM(CASE WHEN stock_quantity > 0 AND stock_quantity <= low_stock_alert THEN 1 ELSE 0 END) as low_stock_count
+            ')
+            ->first();
 
         return [
             'period' => $period,
@@ -61,17 +77,10 @@ class DashboardService
             'debts_receivable' => $receivable,
             'debts_payable' => $payable,
             'debts_net' => $receivable - $payable,
-            'stock_total_qty' => (float) (clone $productsQuery)->sum('stock_quantity'),
-            'stock_total_cost' => (float) (clone $productsQuery)
-                ->selectRaw('COALESCE(SUM(stock_quantity * cost_price), 0) as total')
-                ->value('total'),
-            'stock_total_sales_value' => (float) (clone $productsQuery)
-                ->selectRaw('COALESCE(SUM(stock_quantity * sale_price), 0) as total')
-                ->value('total'),
-            'low_stock_count' => (int) (clone $productsQuery)
-                ->where('stock_quantity', '>', 0)
-                ->whereColumn('stock_quantity', '<=', 'low_stock_alert')
-                ->count(),
+            'stock_total_qty' => (float) ($productStats->stock_total_qty ?? 0),
+            'stock_total_cost' => (float) ($productStats->stock_total_cost ?? 0),
+            'stock_total_sales_value' => (float) ($productStats->stock_total_sales_value ?? 0),
+            'low_stock_count' => (int) ($productStats->low_stock_count ?? 0),
             'recent_sales' => $this->recentSales($salesQuery),
             'recent_expenses' => $this->recentExpenses($expensesQuery),
             'recent_debt_transactions' => $this->recentDebtTransactions($shopId, $from, $to),
