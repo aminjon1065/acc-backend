@@ -41,48 +41,61 @@ class SaleService
                 'payment_type' => $paymentType,
             ]);
 
-            $productIds = collect($items)->pluck('product_id')->unique()->values();
+            $productIds = collect($items)->pluck('product_id')->filter()->unique()->values();
 
-            $products = $this->sales
-                ->queryProductsForShop($actor, $shopId)
-                ->whereIn('id', $productIds)
-                ->lockForUpdate()
-                ->get()
-                ->keyBy('id');
+            $products = $productIds->isNotEmpty() 
+                ? $this->sales
+                    ->queryProductsForShop($actor, $shopId)
+                    ->whereIn('id', $productIds)
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('id')
+                : collect();
 
             $subTotal = 0.0;
 
             foreach ($items as $item) {
-                $productId = $item['product_id'];
-                $product = $products->get($productId);
-
-                if (! $product) {
-                    throw (new \Illuminate\Database\Eloquent\ModelNotFoundException)->setModel(\App\Models\Product::class, $productId);
-                }
-
+                $productId = $item['product_id'] ?? null;
                 $quantity = (float) $item['quantity'];
-                $price = array_key_exists('price', $item)
-                    ? (float) $item['price']
-                    : (float) $product->sale_price;
 
-                if ((float) $product->stock_quantity < $quantity) {
-                    throw ValidationException::withMessages([
-                        'items' => ["Insufficient stock for product: {$product->name}"],
-                    ]);
+                if ($productId) {
+                    $product = $products->get($productId);
+
+                    if (! $product) {
+                        throw (new \Illuminate\Database\Eloquent\ModelNotFoundException)->setModel(\App\Models\Product::class, $productId);
+                    }
+
+                    $price = array_key_exists('price', $item)
+                        ? (float) $item['price']
+                        : (float) $product->sale_price;
+
+                    if ((float) $product->stock_quantity < $quantity) {
+                        throw ValidationException::withMessages([
+                            'items' => ["Insufficient stock for product: {$product->name}"],
+                        ]);
+                    }
+
+                    $lineTotal = $quantity * $price;
+                    $costPrice = (float) $product->cost_price;
+
+                    $product->decrement('stock_quantity', $quantity);
+                } else {
+                    $price = (float) ($item['price'] ?? 0);
+                    $lineTotal = $quantity * $price;
+                    $costPrice = 0.0;
                 }
-
-                $lineTotal = $quantity * $price;
 
                 $sale->items()->create([
                     'shop_id' => $shopId,
-                    'product_id' => $product->id,
+                    'product_id' => $productId,
+                    'name' => $item['name'] ?? null,
+                    'unit' => $item['unit'] ?? null,
                     'quantity' => $quantity,
                     'price' => $price,
-                    'cost_price' => (float) $product->cost_price,
+                    'cost_price' => $costPrice,
                     'total' => $lineTotal,
                 ]);
 
-                $product->decrement('stock_quantity', $quantity);
                 $subTotal += $lineTotal;
             }
 

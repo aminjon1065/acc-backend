@@ -13,12 +13,14 @@ class ProductRepository
     /**
      * @return Builder<Product>
      */
-    public function queryForUser(User $user): Builder
+    public function queryForUser(User $user, ?Request $request = null): Builder
     {
         $query = Product::query();
 
         if (! $user->isSuperAdmin()) {
             $query->where('shop_id', $user->shop_id);
+        } elseif ($request !== null && $request->filled('shop_id')) {
+            $query->where('shop_id', $request->integer('shop_id'));
         }
 
         return $query;
@@ -31,7 +33,7 @@ class ProductRepository
 
     public function paginateForUser(User $user, int $limit, ?Request $request = null): LengthAwarePaginator
     {
-        $query = $this->queryForUser($user);
+        $query = $this->queryForUser($user, $request);
 
         if ($request !== null) {
             $search = trim((string) $request->input('search', ''));

@@ -27,8 +27,11 @@ class StoreSaleRequest extends FormRequest
             'discount' => ['nullable', 'numeric', 'min:0'],
             'paid' => ['nullable', 'numeric', 'min:0'],
             'payment_type' => ['nullable', 'string', 'in:cash,card,transfer'],
+            'type' => ['nullable', 'string', 'in:product,service'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
+            'items.*.product_id' => ['required_if:type,product', 'nullable', 'integer', 'exists:products,id'],
+            'items.*.name' => ['required_if:type,service', 'nullable', 'string', 'max:255'],
+            'items.*.unit' => ['nullable', 'string', 'max:255'],
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
             'items.*.price' => ['nullable', 'numeric', 'min:0'],
         ];
@@ -41,7 +44,8 @@ class StoreSaleRequest extends FormRequest
     {
         return [
             'items.required' => 'At least one sale item is required.',
-            'items.*.product_id.required' => 'Product is required for each item.',
+            'items.*.name.required_if' => 'Service name is required for each item.',
+            'items.*.product_id.required_if' => 'Product is required for each item.',
             'items.*.quantity.required' => 'Quantity is required for each item.',
         ];
     }

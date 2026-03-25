@@ -23,7 +23,7 @@ class UpdateProductRequest extends FormRequest
      */
     public function rules(): array
     {
-        $shopId = $this->user()?->shop_id;
+        $shopId = $this->route('product')?->shop_id;
         $productId = $this->route('product')?->id;
 
         return [

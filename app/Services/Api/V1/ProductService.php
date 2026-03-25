@@ -17,12 +17,13 @@ class ProductService
      */
     public function createProduct(User $user, array $validated): Product
     {
-        $imagePath = $this->storeImage($validated['image'] ?? null, $user->shop_id);
+        $shopId = $user->isSuperAdmin() ? $validated['shop_id'] : $user->shop_id;
+        $imagePath = $this->storeImage($validated['image'] ?? null, $shopId);
         unset($validated['image']);
 
         return $this->products->create([
             ...$validated,
-            'shop_id' => $user->shop_id,
+            'shop_id' => $shopId,
             'created_by' => $user->id,
             'unit' => $validated['unit'] ?? 'piece',
             'low_stock_alert' => $validated['low_stock_alert'] ?? 0,

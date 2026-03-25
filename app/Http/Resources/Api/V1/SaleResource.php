@@ -28,7 +28,9 @@ class SaleResource extends JsonResource
                 return $this->items->map(fn ($item) => [
                     'id' => $item->id,
                     'product_id' => $item->product_id,
-                    'product_name' => $item->product?->name,
+                    'name' => $item->name,
+                    'unit' => $item->unit,
+                    'product_name' => $item->product_id ? $item->product?->name : $item->name,
                     'quantity' => (float) $item->quantity,
                     'price' => (float) $item->price,
                     'cost_price' => (float) $item->cost_price,
