@@ -6,15 +6,16 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\UpdateCurrencyRequest;
 use App\Http\Resources\Api\V1\CurrencyResource;
 use App\Models\Currency;
-use App\Services\AuditLogger;
+use App\Repositories\Api\V1\CurrencyRepository;
+use App\Services\Api\V1\CurrencyService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Support\Facades\DB;
 
 class CurrencyController extends Controller
 {
     public function __construct(
-        private readonly AuditLogger $auditLogger,
+        private readonly CurrencyRepository $currencies,
+        private readonly CurrencyService $currencyService,
     ) {}
 
     /**
@@ -24,11 +25,7 @@ class CurrencyController extends Controller
     {
         $this->authorize('viewAny', Currency::class);
 
-        $currencies = Currency::query()
-            ->orderByDesc('is_default')
-            ->orderBy('code')
-            ->paginate($request->integer('limit', 20))
-            ->withQueryString();
+        $currencies = $this->currencies->paginate($request->integer('limit', 20));
 
         return CurrencyResource::collection($currencies);
     }
@@ -50,24 +47,12 @@ class CurrencyController extends Controller
     {
         $this->authorize('update', $currency);
 
-        $before = $currency->only(['code', 'rate', 'is_default']);
+        $updatedCurrency = $this->currencyService->updateCurrency(
+            $request->user(),
+            $currency,
+            $request->validated()
+        );
 
-        DB::transaction(function () use ($request, $currency, $before): void {
-            $currency->fill($request->validated());
-
-            if ($request->boolean('is_default')) {
-                Currency::query()->whereKeyNot($currency->id)->update(['is_default' => false]);
-                $currency->is_default = true;
-            }
-
-            $currency->save();
-
-            $this->auditLogger->log('currencies.updated', $request->user(), $currency, [
-                'before' => $before,
-                'after' => $currency->only(['code', 'rate', 'is_default']),
-            ]);
-        });
-
-        return new CurrencyResource($currency->fresh());
+        return new CurrencyResource($updatedCurrency->fresh());
     }
 }
