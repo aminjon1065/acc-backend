@@ -35,8 +35,8 @@ final class ApiPermissionMatrix
         'debts' => [
             'viewAny' => ['super_admin', 'owner', 'seller'],
             'view' => ['super_admin', 'owner', 'seller'],
-            'create' => ['super_admin', 'owner', 'seller'],
-            'update' => ['super_admin', 'owner', 'seller'],
+            'create' => ['super_admin', 'owner'],
+            'update' => ['super_admin', 'owner'],
         ],
         'purchases' => [
             'viewAny' => ['super_admin', 'owner'],

@@ -45,6 +45,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api_ability' => EnsureApiAbility::class,
             'active_shop' => EnsureActiveShop::class,
             'shop_scope' => EnsureShopScope::class,
+            'idempotent' => \App\Http\Middleware\VerifyIdempotencyKey::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -25,16 +25,16 @@ Route::prefix('v1')->group(function (): void {
         Route::get('dashboard', [DashboardController::class, 'show'])->middleware('api_ability:dashboard,view');
 
         Route::get('products', [ProductController::class, 'index'])->middleware('api_ability:products,viewAny');
-        Route::post('products', [ProductController::class, 'store'])->middleware('api_ability:products,create');
+        Route::post('products', [ProductController::class, 'store'])->middleware(['api_ability:products,create', 'throttle:mobile-writes']);
         Route::get('products/{product}', [ProductController::class, 'show'])->middleware('api_ability:products,view');
         Route::get('products/{product}/movements', [ProductController::class, 'movements'])->middleware('api_ability:products,view');
         Route::match(['put', 'patch'], 'products/{product}', [ProductController::class, 'update'])->middleware('api_ability:products,update');
         Route::delete('products/{product}', [ProductController::class, 'destroy'])->middleware('api_ability:products,delete');
 
         Route::get('expenses', [ExpenseController::class, 'index'])->middleware('api_ability:expenses,viewAny');
-        Route::post('expenses', [ExpenseController::class, 'store'])->middleware('api_ability:expenses,create');
+        Route::post('expenses', [ExpenseController::class, 'store'])->middleware(['api_ability:expenses,create', 'throttle:mobile-writes', 'idempotent']);
         Route::get('expenses/{expense}', [ExpenseController::class, 'show'])->middleware('api_ability:expenses,view');
-        Route::match(['put', 'patch'], 'expenses/{expense}', [ExpenseController::class, 'update'])->middleware('api_ability:expenses,update');
+        Route::match(['put', 'patch'], 'expenses/{expense}', [ExpenseController::class, 'update'])->middleware(['api_ability:expenses,update', 'idempotent']);
         Route::delete('expenses/{expense}', [ExpenseController::class, 'destroy'])->middleware('api_ability:expenses,delete');
 
         Route::get('currencies', [CurrencyController::class, 'index'])->middleware('api_ability:currencies,viewAny');
@@ -42,16 +42,16 @@ Route::prefix('v1')->group(function (): void {
         Route::match(['put', 'patch'], 'currencies/{currency}', [CurrencyController::class, 'update'])->middleware('api_ability:currencies,update');
 
         Route::get('debts', [DebtController::class, 'index'])->middleware('api_ability:debts,viewAny');
-        Route::post('debts', [DebtController::class, 'store'])->middleware('api_ability:debts,create');
+        Route::post('debts', [DebtController::class, 'store'])->middleware(['api_ability:debts,create', 'throttle:mobile-writes']);
         Route::get('debts/{debt}', [DebtController::class, 'show'])->middleware('api_ability:debts,view');
-        Route::post('debts/{debt}/transactions', [DebtController::class, 'storeTransaction'])->middleware('api_ability:debts,update');
+        Route::post('debts/{debt}/transactions', [DebtController::class, 'storeTransaction'])->middleware(['api_ability:debts,update', 'throttle:mobile-writes']);
 
         Route::get('purchases', [PurchaseController::class, 'index'])->middleware('api_ability:purchases,viewAny');
-        Route::post('purchases', [PurchaseController::class, 'store'])->middleware('api_ability:purchases,create');
+        Route::post('purchases', [PurchaseController::class, 'store'])->middleware(['api_ability:purchases,create', 'throttle:mobile-writes']);
         Route::get('purchases/{purchase}', [PurchaseController::class, 'show'])->middleware('api_ability:purchases,view');
 
         Route::get('sales', [SaleController::class, 'index'])->middleware('api_ability:sales,viewAny');
-        Route::post('sales', [SaleController::class, 'store'])->middleware('api_ability:sales,create');
+        Route::post('sales', [SaleController::class, 'store'])->middleware(['api_ability:sales,create', 'throttle:mobile-writes', 'idempotent']);
         Route::get('sales/{sale}', [SaleController::class, 'show'])->middleware('api_ability:sales,view');
 
         Route::get('shops', [ShopController::class, 'index'])->middleware('api_ability:shops,viewAny');

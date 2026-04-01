@@ -65,9 +65,16 @@ class SaleService
                         throw (new \Illuminate\Database\Eloquent\ModelNotFoundException)->setModel(\App\Models\Product::class, $productId);
                     }
 
-                    $price = array_key_exists('price', $item)
-                        ? (float) $item['price']
-                        : (float) $product->sale_price;
+                    if (array_key_exists('price', $item) && $item['price'] !== null) {
+                        $price = (float) $item['price'];
+                    } else {
+                        $hasBulkPricing = $product->bulk_threshold > 0 && $product->bulk_price > 0;
+                        if ($hasBulkPricing && $quantity >= (float) $product->bulk_threshold) {
+                            $price = (float) $product->bulk_price;
+                        } else {
+                            $price = (float) $product->sale_price;
+                        }
+                    }
 
                     if ((float) $product->stock_quantity < $quantity) {
                         throw ValidationException::withMessages([

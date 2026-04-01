@@ -91,3 +91,53 @@ test('owner cannot create sale with product from another shop', function () {
         ])
         ->assertNotFound();
 });
+
+test('sale calculates bulk pricing automatically when threshold is met and no explicit price is sent', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'stock_quantity' => 100,
+        'sale_price' => 10,
+        'bulk_price' => 8,
+        'bulk_threshold' => 10,
+    ]);
+
+    // Quantity exactly at threshold
+    $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'discount' => 0,
+            'paid' => 80,
+            'payment_type' => 'cash',
+            'items' => [
+                [
+                    'product_id' => $product->id,
+                    'quantity' => 10,
+                ],
+            ],
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.total', 80)
+        ->assertJsonPath('data.items.0.price', 8);
+
+    // Quantity below threshold
+    $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'discount' => 0,
+            'paid' => 90,
+            'payment_type' => 'cash',
+            'items' => [
+                [
+                    'product_id' => $product->id,
+                    'quantity' => 9,
+                ],
+            ],
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.total', 90)
+        ->assertJsonPath('data.items.0.price', 10);
+});

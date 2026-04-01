@@ -15,7 +15,7 @@ services:
       - redis
 
   nginx:
-    image: nginx:1.27-alpine
+    image: nginx:1.27
     container_name: ck-accounting-nginx
     restart: unless-stopped
     ports:
@@ -27,7 +27,7 @@ services:
       - app
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16
     container_name: ck-accounting-postgres
     restart: unless-stopped
     environment:
@@ -40,7 +40,7 @@ services:
       - pgdata:/var/lib/postgresql/data
 
   redis:
-    image: redis:7-alpine
+    image: redis:7
     container_name: ck-accounting-redis
     restart: unless-stopped
     ports:

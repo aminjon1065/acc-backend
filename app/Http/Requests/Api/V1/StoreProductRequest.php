@@ -37,6 +37,8 @@ class StoreProductRequest extends FormRequest
             'unit' => ['nullable', 'string', 'max:32'],
             'cost_price' => ['required', 'numeric', 'min:0'],
             'sale_price' => ['required', 'numeric', 'min:0'],
+            'bulk_price' => ['nullable', 'numeric', 'min:0'],
+            'bulk_threshold' => ['nullable', 'integer', 'min:1'],
             'stock_quantity' => ['required', 'numeric', 'min:0'],
             'low_stock_alert' => ['nullable', 'numeric', 'min:0'],
             'image' => ['nullable', File::image()->max(5 * 1024)],

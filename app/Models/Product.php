@@ -23,6 +23,8 @@ class Product extends Model
         'unit',
         'cost_price',
         'sale_price',
+        'bulk_price',
+        'bulk_threshold',
         'stock_quantity',
         'low_stock_alert',
         'image_path',
@@ -36,6 +38,8 @@ class Product extends Model
         return [
             'cost_price' => 'decimal:2',
             'sale_price' => 'decimal:2',
+            'bulk_price' => 'decimal:2',
+            'bulk_threshold' => 'integer',
             'stock_quantity' => 'decimal:3',
             'low_stock_alert' => 'decimal:3',
         ];

@@ -11,83 +11,113 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class ReportController extends Controller
 {
     public function sales(Request $request): JsonResponse
     {
         $user = $request->user();
-        $salesTotal = (float) $this->scopeByDate($this->scopeSales($user, $request), $request)->sum('total');
-        $salesCount = (int) $this->scopeByDate($this->scopeSales($user, $request), $request)->count();
+        $shopId = $user->isSuperAdmin() ? 'sa_'.($request->shop_id ?? 'all') : $user->shop_id;
+        $cacheKey = "reports:sales:shop_{$shopId}:from_{$request->date_from}:to_{$request->date_to}";
+
+        $data = Cache::remember($cacheKey, 300, function () use ($user, $request) {
+            $salesTotal = (float) $this->scopeByDate($this->scopeSales($user, $request), $request)->sum('total');
+            $salesCount = (int) $this->scopeByDate($this->scopeSales($user, $request), $request)->count();
+
+            return [
+                'sales_total' => $salesTotal,
+                'sales_count' => $salesCount,
+            ];
+        });
 
         return response()->json([
             'success' => true,
             'message' => '',
-            'data' => [
-                'sales_total' => $salesTotal,
-                'sales_count' => $salesCount,
-            ],
+            'data' => $data,
         ]);
     }
 
     public function expenses(Request $request): JsonResponse
     {
         $user = $request->user();
-        $expenseTotal = (float) $this->scopeByDate($this->scopeExpenses($user, $request), $request)->sum('total');
-        $expenseCount = (int) $this->scopeByDate($this->scopeExpenses($user, $request), $request)->count();
+        $shopId = $user->isSuperAdmin() ? 'sa_'.($request->shop_id ?? 'all') : $user->shop_id;
+        $cacheKey = "reports:expenses:shop_{$shopId}:from_{$request->date_from}:to_{$request->date_to}";
+
+        $data = Cache::remember($cacheKey, 300, function () use ($user, $request) {
+            $expenseTotal = (float) $this->scopeByDate($this->scopeExpenses($user, $request), $request)->sum('total');
+            $expenseCount = (int) $this->scopeByDate($this->scopeExpenses($user, $request), $request)->count();
+
+            return [
+                'expenses_total' => $expenseTotal,
+                'expenses_count' => $expenseCount,
+            ];
+        });
 
         return response()->json([
             'success' => true,
             'message' => '',
-            'data' => [
-                'expenses_total' => $expenseTotal,
-                'expenses_count' => $expenseCount,
-            ],
+            'data' => $data,
         ]);
     }
 
     public function profit(Request $request): JsonResponse
     {
         $user = $request->user();
-        $salesQuery = $this->scopeByDate($this->scopeSales($user, $request), $request);
-        $saleItemsQuery = $this->scopeByDate($this->scopeSaleItems($user, $request), $request, column: 'sales.created_at');
-        $expensesQuery = $this->scopeByDate($this->scopeExpenses($user, $request), $request);
+        $shopId = $user->isSuperAdmin() ? 'sa_'.($request->shop_id ?? 'all') : $user->shop_id;
+        $cacheKey = "reports:profit:shop_{$shopId}:from_{$request->date_from}:to_{$request->date_to}";
 
-        $salesTotal = (float) $salesQuery->sum('total');
-        $costOfGoodsSold = (float) $saleItemsQuery
-            ->selectRaw('COALESCE(SUM(sale_items.quantity * sale_items.cost_price), 0) as cogs')
-            ->value('cogs');
-        $expensesTotal = (float) $expensesQuery->sum('total');
-        $profit = $salesTotal - $costOfGoodsSold - $expensesTotal;
+        $data = Cache::remember($cacheKey, 300, function () use ($user, $request) {
+            $salesQuery = $this->scopeByDate($this->scopeSales($user, $request), $request);
+            $saleItemsQuery = $this->scopeByDate($this->scopeSaleItems($user, $request), $request, column: 'sales.created_at');
+            $expensesQuery = $this->scopeByDate($this->scopeExpenses($user, $request), $request);
 
-        return response()->json([
-            'success' => true,
-            'message' => '',
-            'data' => [
+            $salesTotal = (float) $salesQuery->sum('total');
+            $costOfGoodsSold = (float) $saleItemsQuery
+                ->selectRaw('COALESCE(SUM(sale_items.quantity * sale_items.cost_price), 0) as cogs')
+                ->value('cogs');
+            $expensesTotal = (float) $expensesQuery->sum('total');
+            $profit = $salesTotal - $costOfGoodsSold - $expensesTotal;
+
+            return [
                 'sales_total' => $salesTotal,
                 'cost_of_goods_sold' => $costOfGoodsSold,
                 'expenses_total' => $expensesTotal,
                 'profit' => $profit,
-            ],
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => '',
+            'data' => $data,
         ]);
     }
 
     public function stock(Request $request): JsonResponse
     {
-        $products = $this->scopeProducts($request->user(), $request);
+        $user = $request->user();
+        $shopId = $user->isSuperAdmin() ? 'sa_'.($request->shop_id ?? 'all') : $user->shop_id;
+        $cacheKey = "reports:stock:shop_{$shopId}";
 
-        $totalProducts = (int) (clone $products)->count();
-        $totalStockQuantity = (float) (clone $products)->sum('stock_quantity');
-        $lowStockCount = (int) (clone $products)->whereColumn('stock_quantity', '<=', 'low_stock_alert')->count();
+        $data = Cache::remember($cacheKey, 300, function () use ($user, $request) {
+            $products = $this->scopeProducts($user, $request);
+
+            $totalProducts = (int) (clone $products)->count();
+            $totalStockQuantity = (float) (clone $products)->sum('stock_quantity');
+            $lowStockCount = (int) (clone $products)->whereColumn('stock_quantity', '<=', 'low_stock_alert')->count();
+
+            return [
+                'products_count' => $totalProducts,
+                'stock_quantity_total' => $totalStockQuantity,
+                'low_stock_products_count' => $lowStockCount,
+            ];
+        });
 
         return response()->json([
             'success' => true,
             'message' => '',
-            'data' => [
-                'products_count' => $totalProducts,
-                'stock_quantity_total' => $totalStockQuantity,
-                'low_stock_products_count' => $lowStockCount,
-            ],
+            'data' => $data,
         ]);
     }
 

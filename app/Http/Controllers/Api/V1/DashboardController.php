@@ -15,10 +15,24 @@ class DashboardController extends Controller
 
     public function show(DashboardRequest $request): JsonResponse
     {
+        $user = $request->user();
+        $filters = $request->validated();
+        $shopId = $user->isSuperAdmin() ? 'sa_'.($filters['shop_id'] ?? 'all') : $user->shop_id;
+        $period = $filters['period'] ?? 'day';
+        $dateFrom = $filters['date_from'] ?? 'null';
+        $dateTo = $filters['date_to'] ?? 'null';
+        $date = $filters['date'] ?? 'null';
+
+        $cacheKey = "dashboard:shop_{$shopId}:period_{$period}:from_{$dateFrom}:to_{$dateTo}:date_{$date}";
+
+        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($user, $filters) {
+            return $this->dashboardService->build($user, $filters);
+        });
+
         return response()->json([
             'success' => true,
             'message' => '',
-            'data' => $this->dashboardService->build($request->user(), $request->validated()),
+            'data' => $data,
         ]);
     }
 }

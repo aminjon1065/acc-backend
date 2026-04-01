@@ -40,6 +40,8 @@ class UpdateProductRequest extends FormRequest
             'unit' => ['sometimes', 'nullable', 'string', 'max:32'],
             'cost_price' => ['sometimes', 'required', 'numeric', 'min:0'],
             'sale_price' => ['sometimes', 'required', 'numeric', 'min:0'],
+            'bulk_price' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'bulk_threshold' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'stock_quantity' => ['sometimes', 'required', 'numeric', 'min:0'],
             'low_stock_alert' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'image' => ['sometimes', 'nullable', File::image()->max(5 * 1024)],
