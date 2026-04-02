@@ -25,6 +25,9 @@ test('shop owner can create and list own products', function () {
             'unit' => 'piece',
             'cost_price' => 5,
             'sale_price' => 10,
+            'pricing_mode' => 'fixed',
+            'bulk_price' => 8,
+            'bulk_threshold' => 12,
             'stock_quantity' => 100,
             'low_stock_alert' => 5,
             'image' => $image,
@@ -32,8 +35,12 @@ test('shop owner can create and list own products', function () {
         ->assertCreated()
         ->assertJsonPath('data.name', 'Coffee')
         ->assertJsonPath('data.shop_id', $shop->id)
+        ->assertJsonPath('data.pricing_mode', 'fixed')
+        ->assertJsonPath('data.bulk_price', 8)
+        ->assertJsonPath('data.bulk_threshold', 12)
         ->assertJsonPath('data.image_path', fn (?string $path) => is_string($path) && str_starts_with($path, "products/{$shop->id}/"))
-        ->assertJsonPath('data.image_url', fn (?string $url) => is_string($url) && str_contains($url, '/storage/products/'.$shop->id.'/'));
+        ->assertJsonPath('data.image_url', fn (?string $url) => is_string($url) && str_contains($url, '/storage/products/'.$shop->id.'/'))
+        ->assertJsonPath('data.photo_url', fn (?string $url) => is_string($url) && str_contains($url, '/storage/products/'.$shop->id.'/'));
 
     $product = Product::query()->firstOrFail();
 
@@ -45,6 +52,27 @@ test('shop owner can create and list own products', function () {
         ->getJson('/api/v1/products')
         ->assertOk()
         ->assertJsonCount(1, 'data');
+});
+
+test('shop owner can create markup-based product and sale price is derived from cost price', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+
+    $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/products', [
+            'name' => 'Markup Product',
+            'cost_price' => 20,
+            'pricing_mode' => 'markup',
+            'markup_percent' => 25,
+            'stock_quantity' => 15,
+        ])
+        ->assertCreated()
+        ->assertJsonPath('data.pricing_mode', 'markup')
+        ->assertJsonPath('data.markup_percent', 25)
+        ->assertJsonPath('data.sale_price', 25);
 });
 
 test('shop owner can replace product image', function () {

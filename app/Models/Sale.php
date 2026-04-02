@@ -19,11 +19,13 @@ class Sale extends Model
         'shop_id',
         'user_id',
         'customer_name',
+        'type',
         'discount',
         'paid',
         'debt',
         'total',
         'payment_type',
+        'notes',
     ];
 
     /**

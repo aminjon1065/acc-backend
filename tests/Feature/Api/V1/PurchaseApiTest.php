@@ -35,6 +35,41 @@ test('owner can create purchase and stock increases', function () {
     expect((float) $product->fresh()->stock_quantity)->toBe(15.0);
 });
 
+test('purchase markup promotes product to markup pricing mode', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'created_by' => $owner->id,
+        'pricing_mode' => 'fixed',
+        'markup_percent' => null,
+        'cost_price' => 5,
+        'sale_price' => 7,
+    ]);
+
+    $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/purchases', [
+            'items' => [
+                [
+                    'product_id' => $product->id,
+                    'quantity' => 2,
+                    'price' => 10,
+                    'markup_percent' => 40,
+                ],
+            ],
+        ])
+        ->assertSuccessful();
+
+    $product->refresh();
+
+    expect($product->pricing_mode)->toBe('markup');
+    expect((float) $product->markup_percent)->toBe(40.0);
+    expect((float) $product->sale_price)->toBe(14.0);
+});
+
 test('owner cannot create purchase with product from another shop', function () {
     $shopA = Shop::factory()->create();
     $shopB = Shop::factory()->create();

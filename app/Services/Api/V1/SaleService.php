@@ -15,6 +15,7 @@ class SaleService
     public function __construct(
         private readonly SaleRepository $sales,
         private readonly AuditLogger $auditLogger,
+        private readonly ProductCatalogCache $productCatalogCache,
     ) {}
 
     /**
@@ -24,26 +25,30 @@ class SaleService
         User $actor,
         int $shopId,
         ?string $customerName,
+        string $type,
         float $discount,
         float $paid,
         string $paymentType,
+        ?string $notes,
         array $items
     ): Sale {
-        return DB::transaction(function () use ($actor, $shopId, $customerName, $discount, $paid, $paymentType, $items): Sale {
+        return DB::transaction(function () use ($actor, $shopId, $customerName, $type, $discount, $paid, $paymentType, $notes, $items): Sale {
             $sale = $this->sales->create([
                 'shop_id' => $shopId,
                 'user_id' => $actor->id,
                 'customer_name' => $customerName,
+                'type' => $type,
                 'discount' => $discount,
                 'paid' => $paid,
                 'debt' => 0,
                 'total' => 0,
                 'payment_type' => $paymentType,
+                'notes' => $notes,
             ]);
 
             $productIds = collect($items)->pluck('product_id')->filter()->unique()->values();
 
-            $products = $productIds->isNotEmpty() 
+            $products = $productIds->isNotEmpty()
                 ? $this->sales
                     ->queryProductsForShop($actor, $shopId)
                     ->whereIn('id', $productIds)
@@ -65,16 +70,7 @@ class SaleService
                         throw (new \Illuminate\Database\Eloquent\ModelNotFoundException)->setModel(\App\Models\Product::class, $productId);
                     }
 
-                    if (array_key_exists('price', $item) && $item['price'] !== null) {
-                        $price = (float) $item['price'];
-                    } else {
-                        $hasBulkPricing = $product->bulk_threshold > 0 && $product->bulk_price > 0;
-                        if ($hasBulkPricing && $quantity >= (float) $product->bulk_threshold) {
-                            $price = (float) $product->bulk_price;
-                        } else {
-                            $price = (float) $product->sale_price;
-                        }
-                    }
+                    $price = $this->resolveProductPrice($product, $quantity, $item);
 
                     if ((float) $product->stock_quantity < $quantity) {
                         throw ValidationException::withMessages([
@@ -158,15 +154,45 @@ class SaleService
 
             $this->auditLogger->log('sales.created', $actor, $freshSale, [
                 'customer_name' => $customerName,
+                'type' => $type,
                 'items_count' => count($items),
                 'discount' => $discount,
                 'paid' => $paid,
                 'total' => (float) $freshSale->total,
                 'debt' => (float) $freshSale->debt,
                 'payment_type' => $paymentType,
+                'notes' => $notes,
             ], $shopId);
+
+            $this->productCatalogCache->bumpShop($shopId);
 
             return $freshSale;
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function resolveProductPrice(\App\Models\Product $product, float $quantity, array $item): float
+    {
+        if (array_key_exists('price', $item) && $item['price'] !== null) {
+            return (float) $item['price'];
+        }
+
+        $hasBulkPricing = $product->bulk_threshold > 0 && $product->bulk_price > 0;
+
+        if ($hasBulkPricing && $quantity >= (float) $product->bulk_threshold) {
+            return (float) $product->bulk_price;
+        }
+
+        return match ($product->pricing_mode) {
+            'manual' => throw ValidationException::withMessages([
+                'items' => ["Manual price is required for product: {$product->name}"],
+            ]),
+            'markup' => $product->markup_percent !== null
+                ? round((float) $product->cost_price * (1 + ((float) $product->markup_percent / 100)), 2)
+                : (float) $product->sale_price,
+            default => (float) $product->sale_price,
+        };
     }
 }

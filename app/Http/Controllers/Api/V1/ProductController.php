@@ -10,16 +10,19 @@ use App\Models\Product;
 use App\Models\PurchaseItem;
 use App\Models\SaleItem;
 use App\Repositories\Api\V1\ProductRepository;
+use App\Services\Api\V1\ProductCatalogCache;
 use App\Services\Api\V1\ProductService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Cache;
 
 class ProductController extends Controller
 {
     public function __construct(
         private readonly ProductRepository $products,
         private readonly ProductService $productService,
+        private readonly ProductCatalogCache $productCatalogCache,
     ) {}
 
     /**
@@ -29,7 +32,27 @@ class ProductController extends Controller
     {
         $this->authorize('viewAny', Product::class);
 
-        $products = $this->products->paginateForUser($request->user(), $request->integer('limit', 20), $request);
+        $scopeShopId = $request->user()->isSuperAdmin()
+            ? ($request->filled('shop_id') ? $request->integer('shop_id') : null)
+            : (int) $request->user()->shop_id;
+        $version = $this->productCatalogCache->versionForShop($scopeShopId);
+        $cacheKey = sprintf(
+            'products:index:scope_%s:v%d:%s',
+            $scopeShopId ?? 'all',
+            $version,
+            md5(json_encode([
+                'page' => $request->integer('page', 1),
+                'limit' => $request->integer('limit', 20),
+                'search' => trim((string) $request->input('search', '')),
+                'stock_status' => $request->string('stock_status')->toString(),
+            ], JSON_THROW_ON_ERROR))
+        );
+
+        $products = Cache::remember($cacheKey, 300, fn () => $this->products->paginateForUser(
+            $request->user(),
+            $request->integer('limit', 20),
+            $request,
+        ));
 
         return ProductResource::collection($products);
     }
@@ -53,7 +76,11 @@ class ProductController extends Controller
     {
         $this->authorize('view', $product);
 
-        $scoped = $this->products->findForUser($request->user(), $product->id);
+        $scopeShopId = $request->user()->isSuperAdmin() ? $product->shop_id : (int) $request->user()->shop_id;
+        $version = $this->productCatalogCache->versionForShop($scopeShopId);
+        $cacheKey = "products:show:shop_{$scopeShopId}:product_{$product->id}:v{$version}";
+
+        $scoped = Cache::remember($cacheKey, 300, fn () => $this->products->findForUser($request->user(), $product->id));
 
         return new ProductResource($scoped);
     }

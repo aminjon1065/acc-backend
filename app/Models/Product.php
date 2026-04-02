@@ -23,6 +23,8 @@ class Product extends Model
         'unit',
         'cost_price',
         'sale_price',
+        'pricing_mode',
+        'markup_percent',
         'bulk_price',
         'bulk_threshold',
         'stock_quantity',
@@ -38,6 +40,7 @@ class Product extends Model
         return [
             'cost_price' => 'decimal:2',
             'sale_price' => 'decimal:2',
+            'markup_percent' => 'decimal:2',
             'bulk_price' => 'decimal:2',
             'bulk_threshold' => 'integer',
             'stock_quantity' => 'decimal:3',

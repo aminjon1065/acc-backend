@@ -57,9 +57,11 @@ class SaleController extends Controller
             $actor,
             (int) $shopId,
             $request->input('customer_name'),
+            $request->input('type', 'product'),
             (float) $request->input('discount', 0),
             (float) $request->input('paid', 0),
             $request->input('payment_type', 'cash'),
+            $request->input('notes'),
             $request->validated('items'),
         );
 

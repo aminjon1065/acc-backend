@@ -13,6 +13,7 @@ class PurchaseService
     public function __construct(
         private readonly PurchaseRepository $purchases,
         private readonly AuditLogger $auditLogger,
+        private readonly ProductCatalogCache $productCatalogCache,
     ) {}
 
     /**
@@ -64,7 +65,11 @@ class PurchaseService
 
                 if (isset($item['markup_percent']) && $item['markup_percent'] !== null) {
                     $markupPercent = (float) $item['markup_percent'];
-                    $product->update(['sale_price' => round($price * (1 + $markupPercent / 100), 2)]);
+                    $product->update([
+                        'pricing_mode' => 'markup',
+                        'markup_percent' => $markupPercent,
+                        'sale_price' => round($price * (1 + $markupPercent / 100), 2),
+                    ]);
                 }
 
                 $totalAmount += $lineTotal;
@@ -79,6 +84,8 @@ class PurchaseService
                 'items_count' => count($items),
                 'total_amount' => (float) $freshPurchase->total_amount,
             ], $shopId);
+
+            $this->productCatalogCache->bumpShop($shopId);
 
             return $freshPurchase;
         });

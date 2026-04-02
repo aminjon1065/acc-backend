@@ -22,11 +22,13 @@ class SaleFactory extends Factory
             'shop_id' => Shop::factory(),
             'user_id' => User::factory(),
             'customer_name' => fake()->name(),
+            'type' => fake()->randomElement(['product', 'service']),
             'discount' => fake()->randomFloat(2, 0, 50),
             'paid' => fake()->randomFloat(2, 0, 500),
             'debt' => fake()->randomFloat(2, 0, 500),
             'total' => fake()->randomFloat(2, 10, 1000),
             'payment_type' => fake()->randomElement(['cash', 'card', 'transfer']),
+            'notes' => fake()->optional()->sentence(),
         ];
     }
 }

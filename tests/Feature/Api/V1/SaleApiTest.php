@@ -21,9 +21,11 @@ test('owner can create sale and stock decreases with debt calculation', function
 
     $this->actingAs($owner, 'sanctum')
         ->postJson('/api/v1/sales', [
+            'type' => 'product',
             'discount' => 1,
             'paid' => 5,
             'payment_type' => 'cash',
+            'notes' => 'Front counter sale',
             'items' => [
                 [
                     'product_id' => $product->id,
@@ -33,6 +35,8 @@ test('owner can create sale and stock decreases with debt calculation', function
             ],
         ])
         ->assertSuccessful()
+        ->assertJsonPath('data.type', 'product')
+        ->assertJsonPath('data.notes', 'Front counter sale')
         ->assertJsonPath('data.total', 19)
         ->assertJsonPath('data.debt', 14)
         ->assertJsonPath('data.items.0.cost_price', 4);
@@ -98,7 +102,7 @@ test('sale calculates bulk pricing automatically when threshold is met and no ex
         'shop_id' => $shop->id,
         'role' => UserRole::Owner->value,
     ]);
-    
+
     $product = Product::factory()->create([
         'shop_id' => $shop->id,
         'stock_quantity' => 100,
@@ -140,4 +144,60 @@ test('sale calculates bulk pricing automatically when threshold is met and no ex
         ->assertSuccessful()
         ->assertJsonPath('data.total', 90)
         ->assertJsonPath('data.items.0.price', 10);
+});
+
+test('sale requires explicit price for manual pricing mode', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'pricing_mode' => 'manual',
+        'sale_price' => 10,
+        'stock_quantity' => 20,
+    ]);
+
+    $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'items' => [
+                [
+                    'product_id' => $product->id,
+                    'quantity' => 1,
+                ],
+            ],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('items');
+});
+
+test('service sale persists metadata and service item naming', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+
+    $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'type' => 'service',
+            'customer_name' => 'Repair Client',
+            'notes' => 'Includes diagnostics',
+            'payment_type' => 'card',
+            'items' => [
+                [
+                    'name' => 'Phone repair',
+                    'unit' => 'job',
+                    'quantity' => 1,
+                    'price' => 50,
+                ],
+            ],
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.type', 'service')
+        ->assertJsonPath('data.notes', 'Includes diagnostics')
+        ->assertJsonPath('data.items.0.service_name', 'Phone repair')
+        ->assertJsonPath('data.items.0.product_id', null);
 });
