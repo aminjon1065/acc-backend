@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\DebtTransactionType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -29,6 +30,7 @@ class DebtTransaction extends Model
     protected function casts(): array
     {
         return [
+            'type' => DebtTransactionType::class,
             'amount' => 'decimal:2',
         ];
     }

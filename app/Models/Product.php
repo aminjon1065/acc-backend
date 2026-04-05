@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Concerns\BelongsToShop;
+use App\Enums\PricingMode;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -41,6 +42,7 @@ class Product extends Model
         return [
             'cost_price' => 'decimal:2',
             'sale_price' => 'decimal:2',
+            'pricing_mode' => PricingMode::class,
             'markup_percent' => 'decimal:2',
             'bulk_price' => 'decimal:2',
             'bulk_threshold' => 'integer',

@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Concerns\BelongsToShop;
+use App\Enums\PaymentType;
+use App\Enums\SaleType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -35,10 +37,12 @@ class Sale extends Model
     protected function casts(): array
     {
         return [
+            'type' => SaleType::class,
             'discount' => 'decimal:2',
             'paid' => 'decimal:2',
             'debt' => 'decimal:2',
             'total' => 'decimal:2',
+            'payment_type' => PaymentType::class,
         ];
     }
 
