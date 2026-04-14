@@ -37,6 +37,11 @@ class AuthController extends Controller
             ], 403);
         }
 
+        // Enforce device limits: maximum 3 active sessions
+        if ($user->tokens()->count() >= 3) {
+            $user->tokens()->orderBy('created_at', 'desc')->skip(2)->get()->each->delete();
+        }
+
         $newToken = $user->createToken($request->input('device_name', 'mobile-app'));
         $token = $newToken->plainTextToken;
 
@@ -91,6 +96,11 @@ class AuthController extends Controller
         $previousTokenId = $currentToken?->id;
 
         $currentToken?->delete();
+
+        // Enforce device limits: maximum 3 active sessions
+        if ($user->tokens()->count() >= 3) {
+            $user->tokens()->orderBy('created_at', 'desc')->skip(2)->get()->each->delete();
+        }
 
         $newToken = $user->createToken($request->input('device_name', 'mobile-app'));
         $token = $newToken->plainTextToken;
