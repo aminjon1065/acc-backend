@@ -79,4 +79,17 @@ class SaleController extends Controller
 
         return new SaleResource($scoped);
     }
+
+    /**
+     * Update the specified resource.
+     */
+    public function update(UpdateSaleRequest $request, Sale $sale): SaleResource
+    {
+        $this->authorize('update', $sale);
+
+        $scoped = $this->sales->findForUser($request->user(), $sale->id);
+        $updated = $this->saleService->updateSale($scoped, $request->user(), $request->validated());
+
+        return new SaleResource($updated);
+    }
 }

@@ -69,7 +69,9 @@ class SaleService
                     $product = $products->get($productId);
 
                     if (! $product) {
-                        throw (new \Illuminate\Database\Eloquent\ModelNotFoundException)->setModel(\App\Models\Product::class, $productId);
+                        throw ValidationException::withMessages([
+                            'items' => ["Product #{$productId} not found. Sync products before creating sales with them."],
+                        ]);
                     }
 
                     $price = $this->resolveProductPrice($product, $quantity, $item);
@@ -171,6 +173,132 @@ class SaleService
             $this->dashboardCacheVersion->bumpShop($shopId);
 
             return $freshSale;
+        });
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     */
+    public function updateSale(Sale $sale, User $actor, array $data): Sale
+    {
+        return DB::transaction(function () use ($sale, $actor, $data): Sale {
+            // Restore stock for old items before deleting
+            foreach ($sale->items as $oldItem) {
+                if ($oldItem->product_id && $oldItem->quantity) {
+                    $oldItem->product?->increment('stock_quantity', (float) $oldItem->quantity);
+                }
+            }
+
+            // Delete old items
+            $sale->items()->delete();
+
+            $items = $data['items'] ?? [];
+            $shopId = $sale->shop_id;
+
+            $productIds = collect($items)->pluck('product_id')->filter()->unique()->values();
+            $products = $productIds->isNotEmpty()
+                ? $this->sales
+                    ->queryProductsForShop($actor, $shopId)
+                    ->whereIn('id', $productIds)
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('id')
+                : collect();
+
+            $subTotal = 0.0;
+
+            foreach ($items as $item) {
+                $productId = $item['product_id'] ?? null;
+                $quantity = (float) ($item['quantity'] ?? 0);
+
+                if ($productId) {
+                    $product = $products->get($productId);
+
+                    if (! $product) {
+                        throw ValidationException::withMessages([
+                            'items' => ["Product #{$productId} not found. Sync products before updating sales with them."],
+                        ]);
+                    }
+
+                    if ((float) $product->stock_quantity < $quantity) {
+                        throw ValidationException::withMessages([
+                            'items' => ["Insufficient stock for product: {$product->name}"],
+                        ]);
+                    }
+
+                    $price = $this->resolveProductPrice($product, $quantity, $item);
+                    $lineTotal = $quantity * $price;
+                    $costPrice = (float) $product->cost_price;
+
+                    $product->lockForUpdate();
+                    $product->decrement('stock_quantity', $quantity);
+
+                    $sale->items()->create([
+                        'shop_id' => $shopId,
+                        'product_id' => $productId,
+                        'name' => $item['name'] ?? null,
+                        'unit' => $item['unit'] ?? null,
+                        'quantity' => $quantity,
+                        'price' => $price,
+                        'cost_price' => $costPrice,
+                        'total' => $lineTotal,
+                    ]);
+
+                    $subTotal += $lineTotal;
+                } else {
+                    $price = (float) ($item['price'] ?? 0);
+                    $lineTotal = $quantity * $price;
+
+                    $sale->items()->create([
+                        'shop_id' => $shopId,
+                        'product_id' => null,
+                        'name' => $item['name'] ?? null,
+                        'unit' => $item['unit'] ?? null,
+                        'quantity' => $quantity,
+                        'price' => $price,
+                        'cost_price' => 0,
+                        'total' => $lineTotal,
+                    ]);
+
+                    $subTotal += $lineTotal;
+                }
+            }
+
+            $discount = (float) ($data['discount'] ?? 0);
+            $paid = (float) ($data['paid'] ?? 0);
+            $customerName = $data['customer_name'] ?? $sale->customer_name;
+
+            if ($discount > $subTotal) {
+                throw ValidationException::withMessages([
+                    'discount' => ["Discount cannot exceed subtotal ({$subTotal})."],
+                ]);
+            }
+
+            $total = max($subTotal - $discount, 0);
+            $debt = max($total - $paid, 0);
+
+            $sale->update([
+                'customer_name' => $customerName,
+                'discount' => $discount,
+                'paid' => $paid,
+                'debt' => $debt,
+                'total' => $total,
+                'payment_type' => $data['payment_type'] ?? $sale->payment_type,
+                'notes' => $data['notes'] ?? $sale->notes,
+            ]);
+
+            $this->auditLogger->log('sales.updated', $actor, $sale->fresh(['items.product']), [
+                'customer_name' => $customerName,
+                'discount' => $discount,
+                'paid' => $paid,
+                'total' => $total,
+                'debt' => $debt,
+            ], $shopId);
+
+            $this->productCatalogCache->bumpShop($shopId);
+            $this->dashboardCacheVersion->bumpShop($shopId);
+
+            return $sale->fresh(['items.product']);
         });
     }
 
