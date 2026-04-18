@@ -2,6 +2,7 @@
 
 namespace App\Services\Api\V1;
 
+use App\Enums\PricingMode;
 use App\Models\Debt;
 use App\Models\Sale;
 use App\Models\User;
@@ -16,6 +17,7 @@ class SaleService
         private readonly SaleRepository $sales,
         private readonly AuditLogger $auditLogger,
         private readonly ProductCatalogCache $productCatalogCache,
+        private readonly DashboardCacheVersion $dashboardCacheVersion,
     ) {}
 
     /**
@@ -81,6 +83,7 @@ class SaleService
                     $lineTotal = $quantity * $price;
                     $costPrice = (float) $product->cost_price;
 
+                    $product->lockForUpdate();
                     $product->decrement('stock_quantity', $quantity);
                 } else {
                     $price = (float) ($item['price'] ?? 0);
@@ -165,6 +168,7 @@ class SaleService
             ], $shopId);
 
             $this->productCatalogCache->bumpShop($shopId);
+            $this->dashboardCacheVersion->bumpShop($shopId);
 
             return $freshSale;
         });
@@ -186,13 +190,13 @@ class SaleService
         }
 
         return match ($product->pricing_mode) {
-            'manual' => throw ValidationException::withMessages([
+            PricingMode::Manual => throw ValidationException::withMessages([
                 'items' => ["Manual price is required for product: {$product->name}"],
             ]),
-            'markup' => $product->markup_percent !== null
+            PricingMode::Markup => $product->markup_percent !== null
                 ? round((float) $product->cost_price * (1 + ((float) $product->markup_percent / 100)), 2)
                 : (float) $product->sale_price,
-            default => (float) $product->sale_price,
+            PricingMode::Fixed => (float) $product->sale_price,
         };
     }
 }

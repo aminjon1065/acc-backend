@@ -28,7 +28,7 @@ class ExpenseController extends Controller
     {
         $this->authorize('viewAny', Expense::class);
 
-        $expenses = $this->expenses->paginateForUser($request->user(), $request->integer('limit', 20));
+        $expenses = $this->expenses->paginateForUser($request->user(), $request->integer('limit', 20), $request);
 
         return ExpenseResource::collection($expenses);
     }

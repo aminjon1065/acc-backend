@@ -7,8 +7,10 @@ use App\Http\Requests\Api\V1\StoreDebtRequest;
 use App\Http\Requests\Api\V1\StoreDebtTransactionRequest;
 use App\Http\Resources\Api\V1\DebtResource;
 use App\Models\Debt;
+use App\Models\DebtTransaction;
 use App\Repositories\Api\V1\DebtRepository;
 use App\Services\Api\V1\DebtService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Validation\ValidationException;
@@ -31,6 +33,7 @@ class DebtController extends Controller
             $request->user(),
             $request->integer('limit', 20),
             ['transactions'],
+            $request,
         );
 
         return DebtResource::collection($debts);
@@ -91,5 +94,33 @@ class DebtController extends Controller
         );
 
         return new DebtResource($updatedDebt);
+    }
+
+    public function transactions(Request $request, Debt $debt): JsonResponse
+    {
+        $this->authorize('view', $debt);
+
+        $query = DebtTransaction::query()
+            ->where('debt_id', $debt->id)
+            ->orderBy('created_at', 'asc');
+
+        if ($request->filled('created_after')) {
+            $query->where('created_at', '>', $request->input('created_after'));
+        }
+
+        $transactions = $query->limit(100)->get();
+
+        return response()->json([
+            'success' => true,
+            'message' => '',
+            'data' => $transactions->map(fn ($tx) => [
+                'id' => $tx->id,
+                'debt_id' => $tx->debt_id,
+                'type' => $tx->type,
+                'amount' => (float) $tx->amount,
+                'note' => $tx->note,
+                'created_at' => $tx->created_at?->toISOString(),
+            ]),
+        ]);
     }
 }

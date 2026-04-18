@@ -82,7 +82,7 @@ class ProductService
      */
     private function normalizePricingAttributes(array $validated, ?Product $product = null): array
     {
-        $pricingMode = (string) ($validated['pricing_mode'] ?? $product?->pricing_mode ?? 'fixed');
+        $pricingMode = $validated['pricing_mode'] ?? ($product?->pricing_mode?->value ?? 'fixed');
         $markupPercent = array_key_exists('markup_percent', $validated)
             ? $validated['markup_percent']
             : $product?->markup_percent;

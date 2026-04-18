@@ -33,6 +33,7 @@ class ProductResource extends JsonResource
             'image_path' => $this->image_path,
             'image_url' => $this->image_path ? Storage::disk('public')->url($this->image_path) : null,
             'photo_url' => $this->image_path ? Storage::disk('public')->url($this->image_path) : null,
+            '_local_id' => $this->when($request->input('_local_id'), $request->input('_local_id')),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];

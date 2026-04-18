@@ -5,6 +5,7 @@ namespace App\Repositories\Api\V1;
 use App\Models\Expense;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 
 class ExpenseRepository
@@ -28,12 +29,15 @@ class ExpenseRepository
         return $this->queryForUser($user)->findOrFail($id);
     }
 
-    public function paginateForUser(User $user, int $limit): LengthAwarePaginator
+    public function paginateForUser(User $user, int $limit, ?Request $request = null): LengthAwarePaginator
     {
-        return $this->queryForUser($user)
-            ->latest('id')
-            ->paginate($limit)
-            ->withQueryString();
+        $query = $this->queryForUser($user)->latest('id');
+
+        if ($request !== null && $request->filled('updated_since')) {
+            $query->where('updated_at', '>', $request->input('updated_since'));
+        }
+
+        return $query->paginate($limit)->withQueryString();
     }
 
     /**

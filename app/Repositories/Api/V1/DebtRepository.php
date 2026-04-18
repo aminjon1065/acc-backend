@@ -5,6 +5,7 @@ namespace App\Repositories\Api\V1;
 use App\Models\Debt;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 
 class DebtRepository
@@ -48,9 +49,13 @@ class DebtRepository
     /**
      * @param  array<int, string>  $relations
      */
-    public function paginateForUser(User $user, int $limit, array $relations = []): LengthAwarePaginator
+    public function paginateForUser(User $user, int $limit, array $relations = [], ?Request $request = null): LengthAwarePaginator
     {
         $query = $this->queryForUser($user)->latest('id');
+
+        if ($request !== null && $request->filled('updated_since')) {
+            $query->where('updated_at', '>', $request->input('updated_since'));
+        }
 
         if ($relations !== []) {
             $query->with($relations);

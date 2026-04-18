@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Concerns\BelongsToShop;
+use App\Enums\DebtDirection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Debt extends Model
 {
     /** @use HasFactory<\Database\Factories\DebtFactory> */
-    use HasFactory, BelongsToShop;
+    use BelongsToShop, HasFactory;
 
     /**
      * @var list<string>
@@ -30,7 +31,7 @@ class Debt extends Model
     protected function casts(): array
     {
         return [
-            'direction' => 'string',
+            'direction' => DebtDirection::class,
             'balance' => 'decimal:2',
         ];
     }

@@ -18,16 +18,21 @@ class VerifyIdempotencyKey
     {
         $idempotencyKey = $request->header('Idempotency-Key');
 
-        if (!$idempotencyKey) {
+        if (! $idempotencyKey) {
             return $next($request);
         }
 
-        $cacheKey = 'idempotency:' . $idempotencyKey;
+        $user = $request->user();
+        $shopId = $user?->isSuperAdmin()
+            ? $request->input('shop_id')
+            : $user?->shop_id;
+        $cacheKey = "idempotency:{$user->id}:{$shopId}:{$idempotencyKey}";
 
         if (Cache::has($cacheKey)) {
             $cachedResponse = Cache::get($cacheKey);
             $headers = $cachedResponse['headers'];
             $headers['X-Idempotent-Replayed'] = 'true';
+
             return response($cachedResponse['content'], $cachedResponse['status'], $headers);
         }
 

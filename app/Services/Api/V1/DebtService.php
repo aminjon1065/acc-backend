@@ -7,12 +7,14 @@ use App\Models\User;
 use App\Repositories\Api\V1\DebtRepository;
 use App\Services\AuditLogger;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class DebtService
 {
     public function __construct(
         private readonly DebtRepository $debts,
         private readonly AuditLogger $auditLogger,
+        private readonly DashboardCacheVersion $dashboardCacheVersion,
     ) {}
 
     public function createDebt(User $actor, int $shopId, string $personName, string $direction, float $openingBalance): Debt
@@ -45,6 +47,8 @@ class DebtService
                 'balance' => (float) $freshDebt->balance,
             ], $shopId);
 
+            $this->dashboardCacheVersion->bumpShop($shopId);
+
             return $freshDebt;
         });
     }
@@ -52,6 +56,15 @@ class DebtService
     public function storeTransaction(Debt $debt, User $actor, string $type, float $amount, ?string $note): Debt
     {
         return DB::transaction(function () use ($debt, $actor, $type, $amount, $note): Debt {
+            if (in_array($type, ['take', 'repay'], true)) {
+                $maxAmount = (float) $debt->balance;
+                if ($amount > $maxAmount) {
+                    throw ValidationException::withMessages([
+                        'amount' => ["Amount ({$amount}) cannot exceed current balance ({$maxAmount})."],
+                    ]);
+                }
+            }
+
             $delta = match ($type) {
                 'give' => $amount,
                 'take', 'repay' => -$amount,
@@ -77,6 +90,8 @@ class DebtService
                 'note' => $note,
                 'balance' => (float) $freshDebt->balance,
             ], $debt->shop_id);
+
+            $this->dashboardCacheVersion->bumpShop((int) $debt->shop_id);
 
             return $freshDebt;
         });

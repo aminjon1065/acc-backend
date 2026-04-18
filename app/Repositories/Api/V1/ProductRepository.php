@@ -55,6 +55,10 @@ class ProductRepository
                 'in_stock' => $query->where('stock_quantity', '>', 0),
                 default => null,
             };
+
+            if ($request->filled('updated_since')) {
+                $query->where('updated_at', '>', $request->input('updated_since'));
+            }
         }
 
         return $query->latest('id')->paginate($limit)->withQueryString();

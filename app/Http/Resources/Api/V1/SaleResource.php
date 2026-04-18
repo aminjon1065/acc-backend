@@ -40,6 +40,7 @@ class SaleResource extends JsonResource
                     'total' => (float) $item->total,
                 ])->values();
             }),
+            '_local_id' => $this->when($request->input('_local_id'), $request->input('_local_id')),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];

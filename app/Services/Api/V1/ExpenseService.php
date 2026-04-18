@@ -12,6 +12,7 @@ class ExpenseService
     public function __construct(
         private readonly ExpenseRepository $expenses,
         private readonly AuditLogger $auditLogger,
+        private readonly DashboardCacheVersion $dashboardCacheVersion,
     ) {}
 
     /**
@@ -34,6 +35,8 @@ class ExpenseService
             'total' => (float) $expense->total,
         ], $shopId);
 
+        $this->dashboardCacheVersion->bumpShop($shopId);
+
         return $expense;
     }
 
@@ -55,11 +58,14 @@ class ExpenseService
             'after' => $expense->only(['name', 'quantity', 'price', 'total', 'note']),
         ]);
 
+        $this->dashboardCacheVersion->bumpShop((int) $expense->shop_id);
+
         return $expense;
     }
 
     public function deleteExpense(User $actor, Expense $expense): void
     {
+        $shopId = (int) $expense->shop_id;
         $metadata = [
             'name' => $expense->name,
             'total' => (float) $expense->total,
@@ -67,6 +73,7 @@ class ExpenseService
 
         $expense->delete();
 
-        $this->auditLogger->log('expenses.deleted', $actor, metadata: $metadata, shopId: $expense->shop_id);
+        $this->auditLogger->log('expenses.deleted', $actor, metadata: $metadata, shopId: $shopId);
+        $this->dashboardCacheVersion->bumpShop($shopId);
     }
 }

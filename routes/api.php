@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\CurrencyController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DebtController;
 use App\Http\Controllers\Api\V1\ExpenseController;
+use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\PurchaseController;
 use App\Http\Controllers\Api\V1\ReportController;
@@ -45,6 +46,7 @@ Route::prefix('v1')->group(function (): void {
         Route::post('debts', [DebtController::class, 'store'])->middleware(['api_ability:debts,create', 'throttle:mobile-writes']);
         Route::get('debts/{debt}', [DebtController::class, 'show'])->middleware('api_ability:debts,view');
         Route::post('debts/{debt}/transactions', [DebtController::class, 'storeTransaction'])->middleware(['api_ability:debts,update', 'throttle:mobile-writes']);
+        Route::get('debts/{debt}/transactions', [DebtController::class, 'transactions'])->middleware('api_ability:debts,view');
 
         Route::get('purchases', [PurchaseController::class, 'index'])->middleware('api_ability:purchases,viewAny');
         Route::post('purchases', [PurchaseController::class, 'store'])->middleware(['api_ability:purchases,create', 'throttle:mobile-writes']);
@@ -75,5 +77,7 @@ Route::prefix('v1')->group(function (): void {
             Route::get('profit', [ReportController::class, 'profit'])->middleware('api_ability:reports,view');
             Route::get('stock', [ReportController::class, 'stock'])->middleware('api_ability:reports,view');
         });
+
+        Route::post('notifications/token', [NotificationController::class, 'store'])->middleware(['api_ability:notifications,create', 'throttle:mobile-writes']);
     });
 });

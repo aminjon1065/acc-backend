@@ -234,6 +234,7 @@ class DashboardService
                 'id' => $product->id,
                 'name' => $product->name,
                 'code' => $product->code,
+                'unit' => $product->unit,
                 'stock_quantity' => (float) $product->stock_quantity,
                 'low_stock_alert' => (float) $product->low_stock_alert,
             ])

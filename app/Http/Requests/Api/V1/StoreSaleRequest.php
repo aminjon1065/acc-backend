@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V1;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreSaleRequest extends FormRequest
 {
@@ -21,6 +22,9 @@ class StoreSaleRequest extends FormRequest
      */
     public function rules(): array
     {
+        $type = $this->input('type');
+        $isProductType = $type !== 'service';
+
         return [
             'shop_id' => ['nullable', 'integer', 'exists:shops,id'],
             'customer_name' => ['nullable', 'string', 'max:255'],
@@ -29,8 +33,17 @@ class StoreSaleRequest extends FormRequest
             'payment_type' => ['nullable', 'string', 'in:cash,card,transfer'],
             'type' => ['nullable', 'string', 'in:product,service'],
             'items' => ['required', 'array', 'min:1'],
-            'items.*.product_id' => ['required_if:type,product', 'nullable', 'integer', 'exists:products,id'],
-            'items.*.name' => ['required_if:type,service', 'nullable', 'string', 'max:255'],
+            'items.*.product_id' => [
+                'nullable',
+                'integer',
+                'exists:products,id',
+                Rule::requiredIf($isProductType),
+            ],
+            'items.*.name' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
             'items.*.unit' => ['nullable', 'string', 'max:255'],
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
             'items.*.price' => ['nullable', 'numeric', 'min:0'],
@@ -44,8 +57,7 @@ class StoreSaleRequest extends FormRequest
     {
         return [
             'items.required' => 'At least one sale item is required.',
-            'items.*.name.required_if' => 'Service name is required for each item.',
-            'items.*.product_id.required_if' => 'Product is required for each item.',
+            'items.*.price.required' => 'Price is required for each item.',
             'items.*.quantity.required' => 'Quantity is required for each item.',
         ];
     }

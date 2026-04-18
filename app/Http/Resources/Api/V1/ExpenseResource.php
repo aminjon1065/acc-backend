@@ -23,6 +23,7 @@ class ExpenseResource extends JsonResource
             'price' => (float) $this->price,
             'total' => (float) $this->total,
             'note' => $this->note,
+            '_local_id' => $this->when($request->input('_local_id'), $request->input('_local_id')),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];

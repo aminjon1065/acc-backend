@@ -91,4 +91,46 @@ class User extends Authenticatable
     {
         return $this->role === UserRole::SuperAdmin;
     }
+
+    public function updatePushToken(string $token, string $platform): void
+    {
+        $this->forceFill([
+            'push_token' => $token,
+            'push_platform' => $platform,
+        ])->save();
+    }
+
+    public function sendPushNotification(string $title, string $body, array $data = []): void
+    {
+        if (! $this->push_token) {
+            return;
+        }
+
+        $notification = [
+            'title' => $title,
+            'body' => $body,
+            'data' => $data,
+        ];
+
+        if ($this->push_platform === 'ios') {
+            // APNs payload
+            $payload = [
+                'aps' => [
+                    'alert' => $notification,
+                    'sound' => 'default',
+                ],
+                'data' => $data,
+            ];
+        } else {
+            // FCM payload
+            $payload = [
+                'notification' => $notification,
+                'data' => $data,
+                'token' => $this->push_token,
+            ];
+        }
+
+        // Send via Laravel's notification system or direct FCM/APNs
+        $this->notify(new App\Notifications\PushNotification($title, $body, $data));
+    }
 }

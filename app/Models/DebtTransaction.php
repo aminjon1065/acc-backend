@@ -32,6 +32,7 @@ class DebtTransaction extends Model
         return [
             'type' => DebtTransactionType::class,
             'amount' => 'decimal:2',
+            'created_at' => 'datetime',
         ];
     }
 
