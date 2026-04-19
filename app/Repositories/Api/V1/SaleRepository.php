@@ -4,6 +4,7 @@ namespace App\Repositories\Api\V1;
 
 use App\Models\Product;
 use App\Models\Sale;
+use App\Models\SaleReturn;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -44,6 +45,14 @@ class SaleRepository
     public function create(array $attributes): Sale
     {
         return Sale::query()->create($attributes);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    public function createReturn(array $attributes): SaleReturn
+    {
+        return SaleReturn::query()->create($attributes);
     }
 
     /**

@@ -4,7 +4,9 @@ namespace App\Services\Api\V1;
 
 use App\Enums\PricingMode;
 use App\Models\Debt;
+use App\Models\Product;
 use App\Models\Sale;
+use App\Models\SaleReturn;
 use App\Models\User;
 use App\Repositories\Api\V1\SaleRepository;
 use App\Services\AuditLogger;
@@ -326,5 +328,113 @@ class SaleService
                 : (float) $product->sale_price,
             PricingMode::Fixed => (float) $product->sale_price,
         };
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $items  [{ product_id, quantity }]
+     */
+    public function returnSale(
+        User $actor,
+        Sale $sale,
+        array $items,
+        ?string $reason,
+        string $refundMethod
+    ): SaleReturn {
+        return DB::transaction(function () use ($actor, $sale, $items, $reason, $refundMethod): SaleReturn {
+            $shopId = (int) $sale->shop_id;
+
+            $productIds = collect($items)->pluck('product_id')->filter()->unique()->values();
+
+            $products = $productIds->isNotEmpty()
+                ? $this->sales
+                    ->queryProductsForShop($actor, $shopId)
+                    ->whereIn('id', $productIds)
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('id')
+                : collect();
+
+            $returnItemsData = [];
+            $returnTotal = 0.0;
+
+            foreach ($items as $item) {
+                $productId = $item['product_id'];
+                $quantity = (float) $item['quantity'];
+
+                $product = $products->get($productId);
+
+                if (! $product) {
+                    throw (new \Illuminate\Database\Eloquent\ModelNotFoundException)->setModel(Product::class, $productId);
+                }
+
+                $price = (float) $product->sale_price;
+                $lineTotal = $quantity * $price;
+
+                $product->increment('stock_quantity', $quantity);
+
+                $returnItemsData[] = [
+                    'shop_id' => $shopId,
+                    'product_id' => $productId,
+                    'name' => $product->name,
+                    'unit' => $product->unit,
+                    'quantity' => $quantity,
+                    'price' => $price,
+                    'total' => $lineTotal,
+                ];
+
+                $returnTotal += $lineTotal;
+            }
+
+            $refundAmount = min($returnTotal, (float) $sale->paid);
+
+            $sale->update([
+                'paid' => max((float) $sale->paid - $refundAmount, 0),
+                'debt' => max((float) $sale->debt - $returnTotal, 0),
+            ]);
+
+            if ($refundMethod === 'offset_debt' && $sale->customer_name !== null && (float) $sale->debt > 0) {
+                $existingDebt = Debt::query()
+                    ->where('shop_id', $shopId)
+                    ->where('person_name', $sale->customer_name)
+                    ->where('direction', 'receivable')
+                    ->first();
+
+                if ($existingDebt) {
+                    $existingDebt->increment('balance', $returnTotal);
+                    $existingDebt->transactions()->create([
+                        'shop_id' => $shopId,
+                        'user_id' => $actor->id,
+                        'type' => 'repay',
+                        'amount' => $returnTotal,
+                        'note' => "Return #{$sale->id}",
+                    ]);
+                }
+            }
+
+            $returnRecord = $this->sales->createReturn([
+                'shop_id' => $shopId,
+                'sale_id' => $sale->id,
+                'user_id' => $actor->id,
+                'reason' => $reason,
+                'refund_method' => $refundMethod,
+                'total' => $returnTotal,
+            ]);
+
+            foreach ($returnItemsData as $itemData) {
+                $returnRecord->items()->create($itemData);
+            }
+
+            $this->auditLogger->log('sales.returned', $actor, $returnRecord, [
+                'sale_id' => $sale->id,
+                'reason' => $reason,
+                'refund_method' => $refundMethod,
+                'items_count' => count($items),
+                'total' => $returnTotal,
+            ], $shopId);
+
+            $this->productCatalogCache->bumpShop($shopId);
+
+            return $returnRecord->fresh(['items']);
+        });
     }
 }

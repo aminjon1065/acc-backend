@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Models\Sale;
 use App\Models\User;
+use App\UserRole;
 
 class SalePolicy
 {
@@ -40,6 +41,11 @@ class SalePolicy
     public function forceDelete(User $user, Sale $sale): bool
     {
         return false;
+    }
+
+    public function return(User $user, Sale $sale): bool
+    {
+        return $user->isSuperAdmin() || ($user->role === UserRole::Owner && $this->inSameShop($user, $sale->shop_id));
     }
 
     private function isOperationalRole(User $user): bool

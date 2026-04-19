@@ -9,6 +9,7 @@ use App\Http\Resources\Api\V1\ProductResource;
 use App\Models\Product;
 use App\Models\PurchaseItem;
 use App\Models\SaleItem;
+use App\Models\SaleReturnItem;
 use App\Repositories\Api\V1\ProductRepository;
 use App\Services\Api\V1\ProductCatalogCache;
 use App\Services\Api\V1\ProductService;
@@ -155,6 +156,23 @@ class ProductController extends Controller
                 ];
             });
 
+        $returnMovements = SaleReturnItem::query()
+            ->with(['saleReturn.user'])
+            ->where('product_id', $scoped->id)
+            ->get()
+            ->map(function (SaleReturnItem $item): array {
+                return [
+                    'type' => 'return',
+                    'quantity' => (float) $item->quantity,
+                    'price' => (float) $item->price,
+                    'total' => (float) $item->total,
+                    'created_at' => $item->created_at?->toISOString(),
+                    'reference_id' => $item->sale_return_id,
+                    'reference_type' => 'return',
+                    'actor_name' => $item->saleReturn?->user?->name,
+                ];
+            });
+
         return response()->json([
             'success' => true,
             'message' => '',
@@ -163,6 +181,7 @@ class ProductController extends Controller
                 'current_stock' => (float) $scoped->stock_quantity,
                 'movements' => $purchaseMovements
                     ->concat($saleMovements)
+                    ->concat($returnMovements)
                     ->sortByDesc('created_at')
                     ->values()
                     ->all(),

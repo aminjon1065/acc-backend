@@ -55,7 +55,11 @@ Route::prefix('v1')->group(function (): void {
         Route::get('sales', [SaleController::class, 'index'])->middleware('api_ability:sales,viewAny');
         Route::post('sales', [SaleController::class, 'store'])->middleware(['api_ability:sales,create', 'throttle:mobile-writes', 'idempotent']);
         Route::get('sales/{sale}', [SaleController::class, 'show'])->middleware('api_ability:sales,view');
+<<<<<<< Updated upstream
         Route::match(['put', 'patch'], 'sales/{sale}', [SaleController::class, 'update'])->middleware(['api_ability:sales,update', 'idempotent']);
+=======
+        Route::post('sales/{sale}/return', [SaleController::class, 'return'])->middleware(['api_ability:sales,return', 'throttle:mobile-writes']);
+>>>>>>> Stashed changes
 
         Route::get('shops', [ShopController::class, 'index'])->middleware('api_ability:shops,viewAny');
         Route::post('shops', [ShopController::class, 'store'])->middleware('api_ability:shops,create');

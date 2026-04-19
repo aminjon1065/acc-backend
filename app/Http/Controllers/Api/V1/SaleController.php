@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\ReturnSaleRequest;
 use App\Http\Requests\Api\V1\StoreSaleRequest;
 use App\Http\Resources\Api\V1\SaleResource;
 use App\Models\Sale;
@@ -81,6 +82,7 @@ class SaleController extends Controller
     }
 
     /**
+<<<<<<< Updated upstream
      * Update the specified resource.
      */
     public function update(UpdateSaleRequest $request, Sale $sale): SaleResource
@@ -91,5 +93,27 @@ class SaleController extends Controller
         $updated = $this->saleService->updateSale($scoped, $request->user(), $request->validated());
 
         return new SaleResource($updated);
+=======
+     * Process a return / refund for a sale.
+     */
+    public function return(ReturnSaleRequest $request, Sale $sale): \Illuminate\Http\JsonResponse
+    {
+        $this->authorize('return', $sale);
+
+        $scoped = $this->sales->findForUser($request->user(), $sale->id);
+        $this->saleService->returnSale(
+            $request->user(),
+            $scoped,
+            $request->validated('items'),
+            $request->string('reason')->toString(),
+            $request->string('refund_method', 'cash')->toString(),
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Return processed successfully.',
+            'data' => null,
+        ]);
+>>>>>>> Stashed changes
     }
 }
