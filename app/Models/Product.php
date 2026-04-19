@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Product extends Model
 {
     /** @use HasFactory<\Database\Factories\ProductFactory> */
-    use HasFactory, BelongsToShop;
+    use BelongsToShop, HasFactory;
 
     /**
      * @var list<string>
@@ -32,6 +32,7 @@ class Product extends Model
         'stock_quantity',
         'low_stock_alert',
         'image_path',
+        'version',
     ];
 
     /**

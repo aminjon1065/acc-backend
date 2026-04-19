@@ -59,6 +59,10 @@ class ProductRepository
             if ($request->filled('updated_since')) {
                 $query->where('updated_at', '>', $request->input('updated_since'));
             }
+
+            if ($request->filled('after_id')) {
+                $query->where('id', '>', $request->integer('after_id'));
+            }
         }
 
         return $query->latest('id')->paginate($limit)->withQueryString();

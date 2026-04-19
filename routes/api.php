@@ -45,21 +45,18 @@ Route::prefix('v1')->group(function (): void {
         Route::get('debts', [DebtController::class, 'index'])->middleware('api_ability:debts,viewAny');
         Route::post('debts', [DebtController::class, 'store'])->middleware(['api_ability:debts,create', 'throttle:mobile-writes']);
         Route::get('debts/{debt}', [DebtController::class, 'show'])->middleware('api_ability:debts,view');
-        Route::post('debts/{debt}/transactions', [DebtController::class, 'storeTransaction'])->middleware(['api_ability:debts,update', 'throttle:mobile-writes']);
+        Route::post('debts/{debt}/transactions', [DebtController::class, 'storeTransaction'])->middleware(['api_ability:debts,update', 'throttle:mobile-writes', 'idempotent']);
         Route::get('debts/{debt}/transactions', [DebtController::class, 'transactions'])->middleware('api_ability:debts,view');
 
         Route::get('purchases', [PurchaseController::class, 'index'])->middleware('api_ability:purchases,viewAny');
-        Route::post('purchases', [PurchaseController::class, 'store'])->middleware(['api_ability:purchases,create', 'throttle:mobile-writes']);
+        Route::post('purchases', [PurchaseController::class, 'store'])->middleware(['api_ability:purchases,create', 'throttle:mobile-writes', 'idempotent']);
         Route::get('purchases/{purchase}', [PurchaseController::class, 'show'])->middleware('api_ability:purchases,view');
 
         Route::get('sales', [SaleController::class, 'index'])->middleware('api_ability:sales,viewAny');
         Route::post('sales', [SaleController::class, 'store'])->middleware(['api_ability:sales,create', 'throttle:mobile-writes', 'idempotent']);
         Route::get('sales/{sale}', [SaleController::class, 'show'])->middleware('api_ability:sales,view');
-<<<<<<< Updated upstream
         Route::match(['put', 'patch'], 'sales/{sale}', [SaleController::class, 'update'])->middleware(['api_ability:sales,update', 'idempotent']);
-=======
         Route::post('sales/{sale}/return', [SaleController::class, 'return'])->middleware(['api_ability:sales,return', 'throttle:mobile-writes']);
->>>>>>> Stashed changes
 
         Route::get('shops', [ShopController::class, 'index'])->middleware('api_ability:shops,viewAny');
         Route::post('shops', [ShopController::class, 'store'])->middleware('api_ability:shops,create');

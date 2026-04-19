@@ -57,6 +57,10 @@ class DebtRepository
             $query->where('updated_at', '>', $request->input('updated_since'));
         }
 
+        if ($request !== null && $request->filled('after_id')) {
+            $query->where('id', '>', $request->integer('after_id'));
+        }
+
         if ($relations !== []) {
             $query->with($relations);
         }

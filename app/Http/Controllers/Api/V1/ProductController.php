@@ -33,6 +33,18 @@ class ProductController extends Controller
     {
         $this->authorize('viewAny', Product::class);
 
+        // Sync requests (updated_since present) bypass the catalogue cache — they change
+        // frequently and the cache key does not account for the filter parameter.
+        if ($request->filled('updated_since')) {
+            $products = $this->products->paginateForUser(
+                $request->user(),
+                $request->integer('limit', 100),
+                $request,
+            );
+
+            return ProductResource::collection($products);
+        }
+
         $scopeShopId = $request->user()->isSuperAdmin()
             ? ($request->filled('shop_id') ? $request->integer('shop_id') : null)
             : (int) $request->user()->shop_id;
@@ -92,6 +104,15 @@ class ProductController extends Controller
     public function update(UpdateProductRequest $request, Product $product): ProductResource
     {
         $this->authorize('update', $product);
+
+        $clientVersion = $request->integer('version');
+        if ($clientVersion && $product->version !== $clientVersion) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Conflict: product was modified by another client.',
+                'server_data' => new ProductResource($this->products->findForUser($request->user(), $product->id)),
+            ], 409)->throwResponse();
+        }
 
         $scoped = $this->products->findForUser($request->user(), $product->id);
         $updated = $this->productService->updateProduct($scoped, $request->validated());

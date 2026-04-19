@@ -31,6 +31,7 @@ class SaleController extends Controller
             $request->user(),
             $request->integer('limit', 20),
             ['items.product'],
+            $request,
         );
 
         return SaleResource::collection($sales);
@@ -82,10 +83,9 @@ class SaleController extends Controller
     }
 
     /**
-<<<<<<< Updated upstream
      * Update the specified resource.
      */
-    public function update(UpdateSaleRequest $request, Sale $sale): SaleResource
+    public function update(\App\Http\Requests\Api\V1\UpdateSaleRequest $request, Sale $sale): SaleResource
     {
         $this->authorize('update', $sale);
 
@@ -93,7 +93,9 @@ class SaleController extends Controller
         $updated = $this->saleService->updateSale($scoped, $request->user(), $request->validated());
 
         return new SaleResource($updated);
-=======
+    }
+
+    /**
      * Process a return / refund for a sale.
      */
     public function return(ReturnSaleRequest $request, Sale $sale): \Illuminate\Http\JsonResponse
@@ -114,6 +116,5 @@ class SaleController extends Controller
             'message' => 'Return processed successfully.',
             'data' => null,
         ]);
->>>>>>> Stashed changes
     }
 }

@@ -61,6 +61,7 @@ class ProductService
         $validated = $this->normalizePricingAttributes($validated, $product);
 
         $product->fill($validated);
+        $product->version = ($product->version ?? 1) + 1;
         $product->save();
 
         $this->productCatalogCache->bumpShop((int) $product->shop_id);

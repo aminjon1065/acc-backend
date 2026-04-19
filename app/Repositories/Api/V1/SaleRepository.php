@@ -7,6 +7,7 @@ use App\Models\Sale;
 use App\Models\SaleReturn;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 
 class SaleRepository
@@ -72,9 +73,19 @@ class SaleRepository
     /**
      * @param  array<int, string>  $relations
      */
-    public function paginateForUser(User $user, int $limit, array $relations = []): LengthAwarePaginator
+    public function paginateForUser(User $user, int $limit, array $relations = [], ?Request $request = null): LengthAwarePaginator
     {
         $query = $this->queryForUser($user)->latest('id');
+
+        if ($request !== null) {
+            if ($request->filled('updated_since')) {
+                $query->where('updated_at', '>', $request->input('updated_since'));
+            }
+
+            if ($request->filled('after_id')) {
+                $query->where('id', '>', $request->integer('after_id'));
+            }
+        }
 
         if ($relations !== []) {
             $query->with($relations);

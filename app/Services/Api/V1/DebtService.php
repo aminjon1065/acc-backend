@@ -56,6 +56,10 @@ class DebtService
     public function storeTransaction(Debt $debt, User $actor, string $type, float $amount, ?string $note): Debt
     {
         return DB::transaction(function () use ($debt, $actor, $type, $amount, $note): Debt {
+            // Lock BEFORE reading balance — prevents race condition where concurrent
+            // requests both read the same balance, both pass validation, then both write
+            $debt->lockForUpdate();
+
             if (in_array($type, ['take', 'repay'], true)) {
                 $maxAmount = (float) $debt->balance;
                 if ($amount > $maxAmount) {
@@ -78,8 +82,9 @@ class DebtService
                 'note' => $note,
             ]);
 
+            // Atomic increment using DB::raw to prevent race condition
             $debt->update([
-                'balance' => (float) $debt->balance + $delta,
+                'balance' => DB::raw("balance + {$delta}"),
             ]);
 
             $freshDebt = $debt->fresh('transactions');
