@@ -47,24 +47,46 @@ class DebtRepository
     }
 
     /**
-     * @param  array<int, string>  $relations
+     * Paginate with a composite (updated_at, id) cursor for stable, duplicate-free sync.
+     * See ProductRepository::paginateForUser for cursor format documentation.
      */
     public function paginateForUser(User $user, int $limit, array $relations = [], ?Request $request = null): LengthAwarePaginator
     {
-        $query = $this->queryForUser($user)->latest('id');
+        $query = $this->queryForUser($user);
 
-        if ($request !== null && $request->filled('updated_since')) {
-            $query->where('updated_at', '>', $request->input('updated_since'));
-        }
+        if ($request !== null) {
+            if ($request->filled('cursor')) {
+                $decoded = json_decode(base64_decode($request->input('cursor')), true);
+                if (is_array($decoded) && isset($decoded['updated_at'], $decoded['id'])) {
+                    $cursorUpdatedAt = $decoded['updated_at'];
+                    $cursorId = (int) $decoded['id'];
+                    // For ORDER BY updated_at DESC, id DESC: get older records after the cursor.
+                    $query->where(function (Builder $q) use ($cursorUpdatedAt, $cursorId): void {
+                        $q->where('updated_at', '<', $cursorUpdatedAt)
+                            ->orWhere(fn (Builder $q2) => $q2->where('updated_at', '=', $cursorUpdatedAt)->where('id', '<', $cursorId));
+                    });
+                }
+            } elseif ($request->filled('updated_since')) {
+                $query->where('updated_at', '>', $request->input('updated_since'));
+            }
 
-        if ($request !== null && $request->filled('after_id')) {
-            $query->where('id', '>', $request->integer('after_id'));
+            // Upper bound: ensures all pages of a sync cycle use the same server snapshot.
+            if ($request->filled('updated_before')) {
+                $query->where('updated_at', '<', $request->input('updated_before'));
+            }
         }
 
         if ($relations !== []) {
             $query->with($relations);
         }
 
-        return $query->paginate($limit)->withQueryString();
+        // Include soft-deleted records so mobile clients can delete local copies.
+        $query->withTrashed();
+
+        return $query
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->paginate($limit)
+            ->withQueryString();
     }
 }

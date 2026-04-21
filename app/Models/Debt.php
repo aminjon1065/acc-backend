@@ -8,11 +8,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Debt extends Model
 {
     /** @use HasFactory<\Database\Factories\DebtFactory> */
-    use BelongsToShop, HasFactory;
+    use BelongsToShop, HasFactory, SoftDeletes;
 
     /**
      * @var list<string>
@@ -23,6 +24,7 @@ class Debt extends Model
         'person_name',
         'direction',
         'balance',
+        'version',
     ];
 
     /**
@@ -33,6 +35,7 @@ class Debt extends Model
         return [
             'direction' => DebtDirection::class,
             'balance' => 'decimal:2',
+            'version' => 'integer',
         ];
     }
 

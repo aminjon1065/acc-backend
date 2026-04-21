@@ -423,11 +423,11 @@ class MobileDemoSeeder extends Seeder
         DebtTransaction::query()->whereIn('shop_id', $shopIds)->delete();
         SaleItem::query()->whereIn('shop_id', $shopIds)->delete();
         PurchaseItem::query()->whereIn('shop_id', $shopIds)->delete();
-        Sale::query()->whereIn('shop_id', $shopIds)->delete();
-        Purchase::query()->whereIn('shop_id', $shopIds)->delete();
-        Expense::query()->whereIn('shop_id', $shopIds)->delete();
-        Debt::query()->whereIn('shop_id', $shopIds)->delete();
-        Product::query()->whereIn('shop_id', $shopIds)->delete();
+        Sale::query()->withTrashed()->whereIn('shop_id', $shopIds)->forceDelete();
+        Purchase::query()->withTrashed()->whereIn('shop_id', $shopIds)->forceDelete();
+        Expense::query()->withTrashed()->whereIn('shop_id', $shopIds)->forceDelete();
+        Debt::query()->withTrashed()->whereIn('shop_id', $shopIds)->forceDelete();
+        Product::query()->withTrashed()->whereIn('shop_id', $shopIds)->forceDelete();
         ShopSetting::query()->whereIn('shop_id', $shopIds)->delete();
         User::query()->whereIn('email', $demoUserEmails)->delete();
     }

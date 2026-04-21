@@ -40,6 +40,7 @@ class WrapApiResponse
             $response->setData([
                 'success' => true,
                 'message' => '',
+                'server_time' => now()->toISOString(),
                 'data' => $payload,
             ]);
 
@@ -49,6 +50,7 @@ class WrapApiResponse
         $response->setData([
             'success' => true,
             'message' => '',
+            'server_time' => now()->toISOString(),
             ...$payload,
         ]);
 

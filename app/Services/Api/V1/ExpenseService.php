@@ -52,6 +52,7 @@ class ExpenseService
         $price = (float) ($validated['price'] ?? $expense->price);
         $expense->total = $quantity * $price;
         $expense->save();
+        $expense->increment('version');
 
         $this->auditLogger->log('expenses.updated', $actor, $expense, [
             'before' => $before,

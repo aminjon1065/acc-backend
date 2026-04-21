@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\PricingMode;
 use App\Models\Product;
 use App\Models\Shop;
 use App\Models\User;
@@ -65,7 +66,7 @@ test('purchase markup promotes product to markup pricing mode', function () {
 
     $product->refresh();
 
-    expect($product->pricing_mode)->toBe('markup');
+    expect($product->pricing_mode)->toBe(PricingMode::Markup);
     expect((float) $product->markup_percent)->toBe(40.0);
     expect((float) $product->sale_price)->toBe(14.0);
 });

@@ -37,6 +37,7 @@ class ProductResource extends JsonResource
             'version' => $this->version ?? 1,
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
+            'deleted_at' => $this->deleted_at?->toISOString(),
         ];
     }
 }

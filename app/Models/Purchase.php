@@ -7,11 +7,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Purchase extends Model
 {
     /** @use HasFactory<\Database\Factories\PurchaseFactory> */
-    use HasFactory, BelongsToShop;
+    use BelongsToShop, HasFactory, SoftDeletes;
 
     /**
      * @var list<string>
@@ -21,6 +22,7 @@ class Purchase extends Model
         'user_id',
         'supplier_name',
         'total_amount',
+        'version',
     ];
 
     /**
@@ -30,6 +32,7 @@ class Purchase extends Model
     {
         return [
             'total_amount' => 'decimal:2',
+            'version' => 'integer',
         ];
     }
 

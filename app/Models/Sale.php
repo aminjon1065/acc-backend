@@ -9,11 +9,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Sale extends Model
 {
     /** @use HasFactory<\Database\Factories\SaleFactory> */
-    use HasFactory, BelongsToShop;
+    use BelongsToShop, HasFactory, SoftDeletes;
 
     /**
      * @var list<string>
@@ -29,6 +30,7 @@ class Sale extends Model
         'total',
         'payment_type',
         'notes',
+        'version',
     ];
 
     /**
@@ -43,6 +45,7 @@ class Sale extends Model
             'debt' => 'decimal:2',
             'total' => 'decimal:2',
             'payment_type' => PaymentType::class,
+            'version' => 'integer',
         ];
     }
 

@@ -82,10 +82,13 @@ class DebtService
                 'note' => $note,
             ]);
 
-            // Atomic increment using DB::raw to prevent race condition
-            $debt->update([
+            // Atomic increment using raw query builder to avoid Eloquent cast collision
+            // with DB::raw expressions on decimal-cast columns.
+            DB::table('debts')->where('id', $debt->id)->update([
                 'balance' => DB::raw("balance + {$delta}"),
             ]);
+            $debt->increment('version');
+            $debt->refresh();
 
             $freshDebt = $debt->fresh('transactions');
 

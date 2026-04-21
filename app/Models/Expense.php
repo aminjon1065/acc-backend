@@ -6,11 +6,12 @@ use App\Concerns\BelongsToShop;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Expense extends Model
 {
     /** @use HasFactory<\Database\Factories\ExpenseFactory> */
-    use HasFactory, BelongsToShop;
+    use BelongsToShop, HasFactory, SoftDeletes;
 
     /**
      * @var list<string>
@@ -23,6 +24,7 @@ class Expense extends Model
         'price',
         'total',
         'note',
+        'version',
     ];
 
     /**
@@ -34,6 +36,7 @@ class Expense extends Model
             'quantity' => 'decimal:3',
             'price' => 'decimal:2',
             'total' => 'decimal:2',
+            'version' => 'integer',
         ];
     }
 

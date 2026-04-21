@@ -174,6 +174,8 @@ class SaleService
             $this->productCatalogCache->bumpShop($shopId);
             $this->dashboardCacheVersion->bumpShop($shopId);
 
+            $sale->increment('version');
+
             return $freshSale;
         });
     }
@@ -288,6 +290,7 @@ class SaleService
                 'payment_type' => $data['payment_type'] ?? $sale->payment_type,
                 'notes' => $data['notes'] ?? $sale->notes,
             ]);
+            $sale->increment('version');
 
             $this->auditLogger->log('sales.updated', $actor, $sale->fresh(['items.product']), [
                 'customer_name' => $customerName,

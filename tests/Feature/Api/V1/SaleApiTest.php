@@ -93,7 +93,8 @@ test('owner cannot create sale with product from another shop', function () {
                 ],
             ],
         ])
-        ->assertNotFound();
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['items']);
 });
 
 test('sale calculates bulk pricing automatically when threshold is met and no explicit price is sent', function () {

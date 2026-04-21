@@ -75,6 +75,15 @@ class ExpenseController extends Controller
     {
         $this->authorize('update', $expense);
 
+        $clientVersion = $request->integer('version');
+        if ($clientVersion && $expense->version !== $clientVersion) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Conflict: expense was modified by another client.',
+                'server_data' => new ExpenseResource($this->expenses->findForUser($request->user(), $expense->id)),
+            ], 409)->throwResponse();
+        }
+
         $scoped = $this->expenses->findForUser($request->user(), $expense->id);
         $updated = $this->expenseService->updateExpense($request->user(), $scoped, $request->validated());
 

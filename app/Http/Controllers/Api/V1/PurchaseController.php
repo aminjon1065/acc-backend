@@ -29,6 +29,7 @@ class PurchaseController extends Controller
         $purchases = $this->purchases->paginateForUser(
             $request->user(),
             $request->integer('limit', 20),
+            $request,
             ['items.product'],
         );
 

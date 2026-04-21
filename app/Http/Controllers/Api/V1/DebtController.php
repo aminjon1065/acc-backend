@@ -84,6 +84,15 @@ class DebtController extends Controller
     {
         $this->authorize('update', $debt);
 
+        $clientVersion = $request->integer('version');
+        if ($clientVersion && $debt->version !== $clientVersion) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Conflict: debt was modified by another client.',
+                'server_data' => new DebtResource($this->debts->findForUser($request->user(), $debt->id, ['transactions'])),
+            ], 409)->throwResponse();
+        }
+
         $scopedDebt = $this->debts->findForUser($request->user(), $debt->id);
         $updatedDebt = $this->debtService->storeTransaction(
             $scopedDebt,
