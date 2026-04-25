@@ -202,3 +202,92 @@ test('service sale persists metadata and service item naming', function () {
         ->assertJsonPath('data.items.0.service_name', 'Phone repair')
         ->assertJsonPath('data.items.0.product_id', null);
 });
+
+test('idempotency key replays cached response on duplicate request', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'created_by' => $owner->id,
+        'stock_quantity' => 10,
+        'cost_price' => 4,
+        'sale_price' => 10,
+    ]);
+
+    $payload = [
+        'type' => 'product',
+        'discount' => 0,
+        'paid' => 10,
+        'payment_type' => 'cash',
+        'items' => [
+            ['product_id' => $product->id, 'quantity' => 1, 'price' => 10],
+        ],
+    ];
+
+    $idempotencyKey = 'test-idempotency-key-'.uniqid();
+
+    $this->actingAs($owner, 'sanctum')
+        ->withHeaders(['Idempotency-Key' => $idempotencyKey])
+        ->postJson('/api/v1/sales', $payload)
+        ->assertSuccessful()
+        ->assertJsonPath('data.total', 10);
+
+    // Duplicate with same idempotency key must return the same response without creating a second sale
+    $response = $this->actingAs($owner, 'sanctum')
+        ->withHeaders(['Idempotency-Key' => $idempotencyKey])
+        ->postJson('/api/v1/sales', $payload)
+        ->assertSuccessful();
+
+    $response->assertHeader('X-Idempotent-Replayed', 'true');
+
+    // Stock should have been decremented only once
+    expect((float) $product->fresh()->stock_quantity)->toBe(9.0);
+});
+
+test('idempotency key returns conflict for same key with different body', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'created_by' => $owner->id,
+        'stock_quantity' => 10,
+        'cost_price' => 4,
+        'sale_price' => 10,
+    ]);
+
+    $idempotencyKey = 'test-idempotency-key-conflict-'.uniqid();
+
+    $this->actingAs($owner, 'sanctum')
+        ->withHeaders(['Idempotency-Key' => $idempotencyKey])
+        ->postJson('/api/v1/sales', [
+            'type' => 'product',
+            'discount' => 0,
+            'paid' => 10,
+            'payment_type' => 'cash',
+            'items' => [
+                ['product_id' => $product->id, 'quantity' => 1, 'price' => 10],
+            ],
+        ])
+        ->assertSuccessful();
+
+    // Same key, different body must get 409
+    $this->actingAs($owner, 'sanctum')
+        ->withHeaders(['Idempotency-Key' => $idempotencyKey])
+        ->postJson('/api/v1/sales', [
+            'type' => 'product',
+            'discount' => 5,
+            'paid' => 10,
+            'payment_type' => 'cash',
+            'items' => [
+                ['product_id' => $product->id, 'quantity' => 1, 'price' => 10],
+            ],
+        ])
+        ->assertStatus(409)
+        ->assertJsonPath('error', 'idempotency_conflict');
+});

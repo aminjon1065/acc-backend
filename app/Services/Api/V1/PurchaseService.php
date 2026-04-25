@@ -72,6 +72,8 @@ class PurchaseService
                     ]);
                 }
 
+                DB::table('products')->where('id', $product->id)->increment('version');
+
                 $totalAmount += $lineTotal;
             }
 

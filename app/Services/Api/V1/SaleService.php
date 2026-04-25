@@ -139,6 +139,7 @@ class SaleService
                         'amount' => $debt,
                         'note' => "Sale #{$sale->id}",
                     ]);
+                    DB::table('debts')->where('id', $existingDebt->id)->increment('version');
                 } else {
                     $newDebt = Debt::query()->create([
                         'shop_id' => $shopId,
@@ -186,10 +187,15 @@ class SaleService
     public function updateSale(Sale $sale, User $actor, array $data): Sale
     {
         return DB::transaction(function () use ($sale, $actor, $data): Sale {
+            $oldProductIds = $sale->items->pluck('product_id')->filter()->unique()->values();
+            $oldProducts = $oldProductIds->isNotEmpty()
+                ? Product::query()->whereIn('id', $oldProductIds)->lockForUpdate()->get()->keyBy('id')
+                : collect();
+
             // Restore stock for old items before deleting
             foreach ($sale->items as $oldItem) {
                 if ($oldItem->product_id && $oldItem->quantity) {
-                    $oldItem->product?->increment('stock_quantity', (float) $oldItem->quantity);
+                    $oldProducts->get($oldItem->product_id)?->increment('stock_quantity', (float) $oldItem->quantity);
                 }
             }
 
@@ -357,6 +363,9 @@ class SaleService
                     ->keyBy('id')
                 : collect();
 
+            $saleItemPrices = $sale->items->keyBy('product_id')->map(fn ($i) => (float) $i->price);
+            $saleItemQuantities = $sale->items->keyBy('product_id')->map(fn ($i) => (float) $i->quantity);
+
             $returnItemsData = [];
             $returnTotal = 0.0;
 
@@ -370,7 +379,19 @@ class SaleService
                     throw (new \Illuminate\Database\Eloquent\ModelNotFoundException)->setModel(Product::class, $productId);
                 }
 
-                $price = (float) $product->sale_price;
+                $originalQty = $saleItemQuantities->get($productId);
+                if ($originalQty === null) {
+                    throw ValidationException::withMessages([
+                        'items' => ["Product #{$productId} was not in the original sale."],
+                    ]);
+                }
+                if ($quantity > $originalQty) {
+                    throw ValidationException::withMessages([
+                        'items' => ["Return quantity ({$quantity}) exceeds original sale quantity ({$originalQty}) for product #{$productId}."],
+                    ]);
+                }
+
+                $price = $saleItemPrices->get($productId) ?? (float) $product->sale_price;
                 $lineTotal = $quantity * $price;
 
                 $product->increment('stock_quantity', $quantity);
@@ -389,13 +410,14 @@ class SaleService
             }
 
             $refundAmount = min($returnTotal, (float) $sale->paid);
+            $originalDebt = (float) $sale->debt;
 
             $sale->update([
                 'paid' => max((float) $sale->paid - $refundAmount, 0),
                 'debt' => max((float) $sale->debt - $returnTotal, 0),
             ]);
 
-            if ($refundMethod === 'offset_debt' && $sale->customer_name !== null && (float) $sale->debt > 0) {
+            if ($refundMethod === 'offset_debt' && $sale->customer_name !== null && $originalDebt > 0) {
                 $existingDebt = Debt::query()
                     ->where('shop_id', $shopId)
                     ->where('person_name', $sale->customer_name)
@@ -403,7 +425,7 @@ class SaleService
                     ->first();
 
                 if ($existingDebt) {
-                    $existingDebt->increment('balance', $returnTotal);
+                    $existingDebt->decrement('balance', $returnTotal);
                     $existingDebt->transactions()->create([
                         'shop_id' => $shopId,
                         'user_id' => $actor->id,
@@ -411,6 +433,7 @@ class SaleService
                         'amount' => $returnTotal,
                         'note' => "Return #{$sale->id}",
                     ]);
+                    DB::table('debts')->where('id', $existingDebt->id)->increment('version');
                 }
             }
 

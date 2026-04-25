@@ -89,13 +89,15 @@ class SaleController extends Controller
     {
         $this->authorize('update', $sale);
 
-        $clientVersion = $request->integer('version');
-        if ($clientVersion && $sale->version !== $clientVersion) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Conflict: sale was modified by another client.',
-                'server_data' => new SaleResource($this->sales->findForUser($request->user(), $sale->id, ['items.product'])),
-            ], 409)->throwResponse();
+        if ($request->has('version')) {
+            $clientVersion = $request->integer('version');
+            if ($sale->version !== $clientVersion) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Conflict: sale was modified by another client.',
+                    'server_data' => new SaleResource($this->sales->findForUser($request->user(), $sale->id, ['items.product'])),
+                ], 409)->throwResponse();
+            }
         }
 
         $scoped = $this->sales->findForUser($request->user(), $sale->id);

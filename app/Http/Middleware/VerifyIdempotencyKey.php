@@ -9,6 +9,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 class VerifyIdempotencyKey
 {
+    private const LOCK_TIMEOUT_SECONDS = 10;
+
+    private const IDEMPOTENCY_TTL_HOURS = 24;
+
     /**
      * Handle an incoming request.
      *
@@ -27,9 +31,11 @@ class VerifyIdempotencyKey
             ? $request->input('shop_id')
             : $user?->shop_id;
 
-        // Include body hash so the same key with different payload returns 409.
         $bodyHash = md5((string) $request->getContent());
-        $cacheKey = "idempotency:{$user->id}:{$shopId}:{$idempotencyKey}:{$bodyHash}";
+        $userId = $user->id;
+        $cacheKey = "idempotency:{$userId}:{$shopId}:{$idempotencyKey}:{$bodyHash}";
+        $conflictKey = "idempotency:{$userId}:{$shopId}:{$idempotencyKey}";
+        $lockKey = "idempotency_lock:{$userId}:{$shopId}:{$idempotencyKey}";
 
         if (Cache::has($cacheKey)) {
             $cachedResponse = Cache::get($cacheKey);
@@ -39,8 +45,6 @@ class VerifyIdempotencyKey
             return response($cachedResponse['content'], $cachedResponse['status'], $headers);
         }
 
-        // Check if the key exists with a DIFFERENT body hash — that is a conflict.
-        $conflictKey = "idempotency:{$user->id}:{$shopId}:{$idempotencyKey}";
         if (Cache::has($conflictKey)) {
             return response()->json([
                 'message' => 'Idempotency key already used with a different request body.',
@@ -48,21 +52,35 @@ class VerifyIdempotencyKey
             ], 409);
         }
 
-        /** @var \Illuminate\Http\Response|\Illuminate\Http\JsonResponse $response */
-        $response = $next($request);
+        // Atomic acquire: only one concurrent request wins the lock.
+        // Cache::add returns false if the key already exists.
+        $lock = Cache::lock($lockKey, self::LOCK_TIMEOUT_SECONDS);
 
-        if ($response->isSuccessful()) {
-            // Store with the body-specific key for successful replay.
-            Cache::put($cacheKey, [
-                'content' => $response->getContent(),
-                'status' => $response->getStatusCode(),
-                'headers' => $response->headers->all(),
-            ], now()->addHours(24));
-
-            // Also mark the base key as "some payload seen" for conflict detection.
-            Cache::put($conflictKey, ['seen' => true], now()->addHours(24));
+        if (! $lock->get()) {
+            // Another request is currently processing this idempotency key.
+            return response()->json([
+                'message' => 'Request with this idempotency key is currently being processed.',
+                'error' => 'idempotency_in_progress',
+            ], 409);
         }
 
-        return $response;
+        try {
+            /** @var \Illuminate\Http\Response|\Illuminate\Http\JsonResponse $response */
+            $response = $next($request);
+
+            if ($response->isSuccessful()) {
+                Cache::put($cacheKey, [
+                    'content' => $response->getContent(),
+                    'status' => $response->getStatusCode(),
+                    'headers' => $response->headers->all(),
+                ], now()->addHours(self::IDEMPOTENCY_TTL_HOURS));
+
+                Cache::put($conflictKey, ['seen' => true], now()->addHours(self::IDEMPOTENCY_TTL_HOURS));
+            }
+
+            return $response;
+        } finally {
+            $lock->release();
+        }
     }
 }
