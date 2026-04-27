@@ -14,15 +14,18 @@ class AdminUserSeeder extends Seeder
      */
     public function run(): void
     {
-        User::query()->updateOrCreate(
-            ['email' => 'admin@test.com'],
+        $admin = User::query()->updateOrCreate(
+            ['email' => 'admin@ck-accounting.test'],
             [
                 'name' => 'Super Admin',
                 'shop_id' => null,
                 'role' => UserRole::SuperAdmin->value,
                 'password' => Hash::make('Momajon115877!'),
-                'email_verified_at' => now(),
             ]
         );
+
+        $admin->forceFill([
+            'email_verified_at' => now(),
+        ])->save();
     }
 }

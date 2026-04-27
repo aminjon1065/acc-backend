@@ -20,6 +20,7 @@ class ProductService
      */
     public function createProduct(User $user, array $validated): Product
     {
+        $validated = $this->normalizeImageUpload($validated);
         $shopId = $user->isSuperAdmin() ? $validated['shop_id'] : $user->shop_id;
         $imagePath = $this->storeImage($validated['image'] ?? null, $shopId);
         unset($validated['image']);
@@ -46,6 +47,7 @@ class ProductService
      */
     public function updateProduct(Product $product, array $validated): Product
     {
+        $validated = $this->normalizeImageUpload($validated);
         $removeImage = (bool) ($validated['remove_image'] ?? false);
 
         if (array_key_exists('image', $validated)) {
@@ -67,6 +69,21 @@ class ProductService
         $this->productCatalogCache->bumpShop((int) $product->shop_id);
 
         return $product;
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    private function normalizeImageUpload(array $validated): array
+    {
+        if (! array_key_exists('image', $validated) && array_key_exists('photo', $validated)) {
+            $validated['image'] = $validated['photo'];
+        }
+
+        unset($validated['photo']);
+
+        return $validated;
     }
 
     public function deleteProduct(Product $product): void

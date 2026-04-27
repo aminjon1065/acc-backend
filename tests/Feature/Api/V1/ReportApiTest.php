@@ -18,18 +18,21 @@ test('owner can view sales, expenses, profit and stock reports', function () {
         'shop_id' => $shop->id,
         'stock_quantity' => 7,
         'low_stock_alert' => 10,
+        'sale_price' => 100,
     ]);
 
     Sale::factory()->create([
         'shop_id' => $shop->id,
         'user_id' => $owner->id,
         'total' => 120,
+        'payment_type' => 'cash',
     ]);
 
     $sale = Sale::factory()->create([
         'shop_id' => $shop->id,
         'user_id' => $owner->id,
         'total' => 80,
+        'payment_type' => 'cash',
     ]);
 
     SaleItem::factory()->create([
@@ -50,17 +53,28 @@ test('owner can view sales, expenses, profit and stock reports', function () {
     $this->actingAs($owner, 'sanctum')
         ->getJson('/api/v1/reports/sales')
         ->assertSuccessful()
+        ->assertJsonPath('data.total_amount', 200)
+        ->assertJsonPath('data.total_sales', 2)
+        ->assertJsonPath('data.cash', 200)
+        ->assertJsonPath('data.card', 0)
+        ->assertJsonPath('data.transfer', 0)
         ->assertJsonPath('data.sales_total', 200)
         ->assertJsonPath('data.sales_count', 2);
 
     $this->actingAs($owner, 'sanctum')
         ->getJson('/api/v1/reports/expenses')
         ->assertSuccessful()
+        ->assertJsonPath('data.total_amount', 40)
+        ->assertJsonPath('data.count', 1)
         ->assertJsonPath('data.expenses_total', 40);
 
     $this->actingAs($owner, 'sanctum')
         ->getJson('/api/v1/reports/profit')
         ->assertSuccessful()
+        ->assertJsonPath('data.total_sales', 200)
+        ->assertJsonPath('data.total_cost', 30)
+        ->assertJsonPath('data.total_expenses', 40)
+        ->assertJsonPath('data.profit', 130)
         ->assertJsonPath('data.sales_total', 200)
         ->assertJsonPath('data.cost_of_goods_sold', 30)
         ->assertJsonPath('data.expenses_total', 40)
@@ -69,6 +83,11 @@ test('owner can view sales, expenses, profit and stock reports', function () {
     $this->actingAs($owner, 'sanctum')
         ->getJson('/api/v1/reports/stock')
         ->assertSuccessful()
+        ->assertJsonPath('data.total_products', 1)
+        ->assertJsonPath('data.total_value', 700)
+        ->assertJsonPath('data.low_stock', 1)
+        ->assertJsonPath('data.out_of_stock', 0)
+        ->assertJsonPath('data.data.0.id', $product->id)
         ->assertJsonPath('data.products_count', 1)
         ->assertJsonPath('data.low_stock_products_count', 1);
 });

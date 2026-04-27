@@ -22,10 +22,41 @@ class ReportController extends Controller
         $cacheKey = "reports:sales:shop_{$shopId}:from_{$request->date_from}:to_{$request->date_to}";
 
         $data = Cache::remember($cacheKey, 300, function () use ($user, $request) {
-            $salesTotal = (float) $this->scopeByDate($this->scopeSales($user, $request), $request)->sum('total');
-            $salesCount = (int) $this->scopeByDate($this->scopeSales($user, $request), $request)->count();
+            $sales = $this->scopeByDate($this->scopeSales($user, $request), $request)
+                ->get(['id', 'total', 'payment_type', 'created_at']);
+
+            $salesTotal = (float) $sales->sum('total');
+            $salesCount = $sales->count();
+            $cashTotal = (float) $sales
+                ->filter(fn (Sale $sale) => ($sale->payment_type?->value ?? $sale->payment_type) === 'cash')
+                ->sum('total');
+            $cardTotal = (float) $sales
+                ->filter(fn (Sale $sale) => ($sale->payment_type?->value ?? $sale->payment_type) === 'card')
+                ->sum('total');
+            $transferTotal = (float) $sales
+                ->filter(fn (Sale $sale) => ($sale->payment_type?->value ?? $sale->payment_type) === 'transfer')
+                ->sum('total');
+            $dailyData = $sales
+                ->groupBy(fn (Sale $sale) => $sale->created_at?->toDateString() ?? '')
+                ->filter(fn ($items, string $date) => $date !== '')
+                ->map(fn ($items, string $date) => [
+                    'date' => $date,
+                    'count' => $items->count(),
+                    'amount' => (float) $items->sum('total'),
+                ])
+                ->sortByDesc('date')
+                ->values()
+                ->all();
 
             return [
+                'total_sales' => $salesCount,
+                'total_amount' => $salesTotal,
+                'cash' => $cashTotal,
+                'card' => $cardTotal,
+                'transfer' => $transferTotal,
+                'date_from' => $request->string('date_from')->toString(),
+                'date_to' => $request->string('date_to')->toString(),
+                'data' => $dailyData,
                 'sales_total' => $salesTotal,
                 'sales_count' => $salesCount,
             ];
@@ -45,10 +76,29 @@ class ReportController extends Controller
         $cacheKey = "reports:expenses:shop_{$shopId}:from_{$request->date_from}:to_{$request->date_to}";
 
         $data = Cache::remember($cacheKey, 300, function () use ($user, $request) {
-            $expenseTotal = (float) $this->scopeByDate($this->scopeExpenses($user, $request), $request)->sum('total');
-            $expenseCount = (int) $this->scopeByDate($this->scopeExpenses($user, $request), $request)->count();
+            $expenses = $this->scopeByDate($this->scopeExpenses($user, $request), $request)
+                ->get(['id', 'total', 'created_at']);
+
+            $expenseTotal = (float) $expenses->sum('total');
+            $expenseCount = $expenses->count();
+            $dailyData = $expenses
+                ->groupBy(fn (Expense $expense) => $expense->created_at?->toDateString() ?? '')
+                ->filter(fn ($items, string $date) => $date !== '')
+                ->map(fn ($items, string $date) => [
+                    'date' => $date,
+                    'count' => $items->count(),
+                    'amount' => (float) $items->sum('total'),
+                ])
+                ->sortByDesc('date')
+                ->values()
+                ->all();
 
             return [
+                'total_amount' => $expenseTotal,
+                'count' => $expenseCount,
+                'date_from' => $request->string('date_from')->toString(),
+                'date_to' => $request->string('date_to')->toString(),
+                'data' => $dailyData,
                 'expenses_total' => $expenseTotal,
                 'expenses_count' => $expenseCount,
             ];
@@ -80,10 +130,15 @@ class ReportController extends Controller
             $profit = $salesTotal - $costOfGoodsSold - $expensesTotal;
 
             return [
+                'total_sales' => $salesTotal,
+                'total_expenses' => $expensesTotal,
+                'total_cost' => $costOfGoodsSold,
+                'date_from' => $request->string('date_from')->toString(),
+                'date_to' => $request->string('date_to')->toString(),
+                'profit' => $profit,
                 'sales_total' => $salesTotal,
                 'cost_of_goods_sold' => $costOfGoodsSold,
                 'expenses_total' => $expensesTotal,
-                'profit' => $profit,
             ];
         });
 
@@ -98,16 +153,39 @@ class ReportController extends Controller
     {
         $user = $request->user();
         $shopId = $user->isSuperAdmin() ? 'sa_'.($request->shop_id ?? 'all') : $user->shop_id;
-        $cacheKey = "reports:stock:shop_{$shopId}";
+        $cacheKey = "reports:stock:v2:shop_{$shopId}";
 
         $data = Cache::remember($cacheKey, 300, function () use ($user, $request) {
             $products = $this->scopeProducts($user, $request);
 
             $totalProducts = (int) (clone $products)->count();
             $totalStockQuantity = (float) (clone $products)->sum('stock_quantity');
-            $lowStockCount = (int) (clone $products)->whereColumn('stock_quantity', '<=', 'low_stock_alert')->count();
+            $totalValue = (float) (clone $products)->selectRaw('COALESCE(SUM(stock_quantity * sale_price), 0) as total_value')->value('total_value');
+            $lowStockCount = (int) (clone $products)
+                ->where('stock_quantity', '>', 0)
+                ->whereColumn('stock_quantity', '<=', 'low_stock_alert')
+                ->count();
+            $outOfStockCount = (int) (clone $products)->where('stock_quantity', '<=', 0)->count();
+            $productRows = (clone $products)
+                ->select(['id', 'name', 'stock_quantity', 'sale_price'])
+                ->orderByRaw('(stock_quantity * sale_price) desc')
+                ->get()
+                ->map(fn (Product $product) => [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'stock_quantity' => (float) $product->stock_quantity,
+                    'sale_price' => (float) $product->sale_price,
+                    'value' => (float) $product->stock_quantity * (float) $product->sale_price,
+                ])
+                ->values()
+                ->all();
 
             return [
+                'total_products' => $totalProducts,
+                'total_value' => $totalValue,
+                'low_stock' => $lowStockCount,
+                'out_of_stock' => $outOfStockCount,
+                'data' => $productRows,
                 'products_count' => $totalProducts,
                 'stock_quantity_total' => $totalStockQuantity,
                 'low_stock_products_count' => $lowStockCount,

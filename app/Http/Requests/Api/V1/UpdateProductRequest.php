@@ -60,6 +60,7 @@ class UpdateProductRequest extends FormRequest
             'stock_quantity' => ['sometimes', 'required', 'numeric', 'min:0'],
             'low_stock_alert' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'image' => ['sometimes', 'nullable', File::image()->max(5 * 1024)],
+            'photo' => ['sometimes', 'nullable', File::image()->max(5 * 1024)],
             'remove_image' => ['sometimes', 'boolean'],
         ];
     }

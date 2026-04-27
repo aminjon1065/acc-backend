@@ -22,7 +22,7 @@ class ProductFactory extends Factory
             'shop_id' => Shop::factory(),
             'created_by' => User::factory(),
             'name' => fake()->words(3, true),
-            'code' => strtoupper(fake()->bothify('PRD-####')),
+            'code' => strtoupper(fake()->unique()->bothify('PRD-####')),
             'unit' => fake()->randomElement(['piece', 'kg', 'liter', 'meter']),
             'cost_price' => fake()->randomFloat(2, 1, 300),
             'sale_price' => fake()->randomFloat(2, 1, 500),

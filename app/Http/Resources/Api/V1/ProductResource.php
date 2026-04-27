@@ -15,6 +15,10 @@ class ProductResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $imageUrl = $this->image_path
+            ? rtrim($request->getSchemeAndHttpHost(), '/').Storage::disk('public')->url($this->image_path)
+            : null;
+
         return [
             'id' => $this->id,
             'shop_id' => $this->shop_id,
@@ -31,8 +35,8 @@ class ProductResource extends JsonResource
             'low_stock_alert' => (float) $this->low_stock_alert,
             'is_low_stock' => (float) $this->stock_quantity <= (float) $this->low_stock_alert,
             'image_path' => $this->image_path,
-            'image_url' => $this->image_path ? Storage::disk('public')->url($this->image_path) : null,
-            'photo_url' => $this->image_path ? Storage::disk('public')->url($this->image_path) : null,
+            'image_url' => $imageUrl,
+            'photo_url' => $imageUrl,
             '_local_id' => $this->when($request->input('_local_id'), $request->input('_local_id')),
             'version' => $this->version ?? 1,
             'created_at' => $this->created_at?->toISOString(),

@@ -44,6 +44,7 @@ class StoreProductRequest extends FormRequest
             'stock_quantity' => ['required', 'numeric', 'min:0'],
             'low_stock_alert' => ['nullable', 'numeric', 'min:0'],
             'image' => ['nullable', File::image()->max(5 * 1024)],
+            'photo' => ['nullable', File::image()->max(5 * 1024)],
         ];
     }
 

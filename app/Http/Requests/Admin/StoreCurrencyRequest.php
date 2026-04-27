@@ -3,12 +3,10 @@
 namespace App\Http\Requests\Admin;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
-class UpdateCurrencyRequest extends FormRequest
+class StoreCurrencyRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
         return true;
@@ -22,7 +20,8 @@ class UpdateCurrencyRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['sometimes', 'required', 'string', 'max:255'],
+            'code' => ['required', 'string', 'max:10', Rule::unique('currencies', 'code')],
+            'name' => ['required', 'string', 'max:255'],
             'rate' => ['required', 'numeric', 'gt:0'],
             'is_default' => ['nullable', 'boolean'],
         ];
@@ -31,6 +30,7 @@ class UpdateCurrencyRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'code.unique' => 'This currency code already exists.',
             'rate.gt' => 'Exchange rate must be greater than 0.',
         ];
     }

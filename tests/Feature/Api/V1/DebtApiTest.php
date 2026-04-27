@@ -18,6 +18,8 @@ test('owner can create debt and apply transactions with balance updates', functi
             'opening_balance' => 100,
         ])
         ->assertSuccessful()
+        ->assertJsonPath('data.opening_balance', 100)
+        ->assertJsonPath('data.transactions.0.debt_id', fn (int $debtId) => $debtId > 0)
         ->assertJsonPath('data.balance', 100);
 
     $debtId = $createResponse->json('data.id');

@@ -75,6 +75,33 @@ test('shop owner can create markup-based product and sale price is derived from 
         ->assertJsonPath('data.sale_price', 25);
 });
 
+test('shop owner can create product image from mobile photo field', function () {
+    Storage::fake('public');
+
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+
+    $this->actingAs($owner, 'sanctum')
+        ->post('/api/v1/products', [
+            'name' => 'Mobile Photo Product',
+            'cost_price' => 5,
+            'sale_price' => 10,
+            'stock_quantity' => 3,
+            'photo' => UploadedFile::fake()->image('mobile-photo.jpg'),
+        ])
+        ->assertCreated()
+        ->assertJsonPath('data.image_path', fn (?string $path) => is_string($path) && str_starts_with($path, "products/{$shop->id}/"))
+        ->assertJsonPath('data.photo_url', fn (?string $url) => is_string($url) && str_contains($url, '/storage/products/'.$shop->id.'/'));
+
+    $product = Product::query()->where('name', 'Mobile Photo Product')->firstOrFail();
+
+    expect($product->image_path)->not->toBeNull();
+    Storage::disk('public')->assertExists($product->image_path);
+});
+
 test('shop owner can replace product image', function () {
     Storage::fake('public');
 
@@ -98,6 +125,34 @@ test('shop owner can replace product image', function () {
         ])
         ->assertOk()
         ->assertJsonPath('data.id', $product->id)
+        ->assertJsonPath('data.image_path', fn (?string $path) => is_string($path) && $path !== $oldImagePath);
+
+    $product->refresh();
+
+    Storage::disk('public')->assertMissing($oldImagePath);
+    Storage::disk('public')->assertExists($product->image_path);
+});
+
+test('shop owner can replace product image from mobile photo field', function () {
+    Storage::fake('public');
+
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'image_path' => UploadedFile::fake()->image('old-mobile.jpg')->store("products/{$shop->id}", 'public'),
+    ]);
+    $oldImagePath = $product->image_path;
+
+    $this->actingAs($owner, 'sanctum')
+        ->post('/api/v1/products/'.$product->id, [
+            '_method' => 'PATCH',
+            'photo' => UploadedFile::fake()->image('new-mobile.jpg'),
+        ])
+        ->assertOk()
         ->assertJsonPath('data.image_path', fn (?string $path) => is_string($path) && $path !== $oldImagePath);
 
     $product->refresh();
