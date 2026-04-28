@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleReturn;
 use App\Models\User;
+use App\UserRole;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -19,7 +20,9 @@ class SaleRepository
     {
         $query = Sale::query();
 
-        if (! $user->isSuperAdmin()) {
+        if ($user->role === UserRole::Seller) {
+            $query->where('user_id', $user->id);
+        } elseif (! $user->isSuperAdmin()) {
             $query->where('shop_id', $user->shop_id);
         }
 

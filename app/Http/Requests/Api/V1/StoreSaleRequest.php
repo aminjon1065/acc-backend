@@ -46,7 +46,32 @@ class StoreSaleRequest extends FormRequest
             ],
             'items.*.unit' => ['nullable', 'string', 'max:255'],
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
-            'items.*.price' => ['nullable', 'numeric', 'min:0'],
+            'items.*.price' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                function ($attribute, $value, $fail) {
+                    $itemIndex = preg_replace('/[^0-9]/', '', $attribute);
+                    $productId = $this->input("items.{$itemIndex}.product_id");
+                    $type = $this->input('type');
+
+                    if ($type === 'service' || $productId === null) {
+                        return;
+                    }
+
+                    $price = (float) $value;
+                    if ($price <= 0) {
+                        $fail('Price must be greater than zero for product items.');
+
+                        return;
+                    }
+
+                    $product = \App\Models\Product::find($productId);
+                    if ($product && $product->cost_price !== null && $price < (float) $product->cost_price) {
+                        $fail("Price cannot be below cost price ({$product->cost_price}) for product \"{$product->name}\".");
+                    }
+                },
+            ],
         ];
     }
 

@@ -25,12 +25,20 @@ class PurchasePolicy
 
     public function update(User $user, Purchase $purchase): bool
     {
-        return false;
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        return $user->role === UserRole::Owner && (int) $user->shop_id === (int) $purchase->shop_id;
     }
 
     public function delete(User $user, Purchase $purchase): bool
     {
-        return false;
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        return $user->role === UserRole::Owner && (int) $user->shop_id === (int) $purchase->shop_id;
     }
 
     public function restore(User $user, Purchase $purchase): bool

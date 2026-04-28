@@ -56,17 +56,26 @@ class AuthController extends Controller
             'data' => [
                 'token' => $token,
                 'token_type' => 'Bearer',
-                'user' => $user->only(['id', 'shop_id', 'name', 'email', 'role']),
+                'user' => array_merge(
+                    $user->only(['id', 'shop_id', 'name', 'email', 'role']),
+                    ['shop_name' => $user->shop?->name]
+                ),
             ],
         ]);
     }
 
     public function me(Request $request): JsonResponse
     {
+        $user = $request->user();
+        $user->loadMissing('shop');
+
         return response()->json([
             'success' => true,
             'message' => '',
-            'data' => $request->user()->only(['id', 'shop_id', 'name', 'email', 'role']),
+            'data' => array_merge(
+                $user->only(['id', 'shop_id', 'name', 'email', 'role']),
+                ['shop_name' => $user->shop?->name]
+            ),
         ]);
     }
 
@@ -111,13 +120,18 @@ class AuthController extends Controller
             'device_name' => $request->input('device_name', 'mobile-app'),
         ]);
 
+        $user->loadMissing('shop');
+
         return response()->json([
             'success' => true,
             'message' => 'Token refreshed.',
             'data' => [
                 'token' => $token,
                 'token_type' => 'Bearer',
-                'user' => $user->only(['id', 'shop_id', 'name', 'email', 'role']),
+                'user' => array_merge(
+                    $user->only(['id', 'shop_id', 'name', 'email', 'role']),
+                    ['shop_name' => $user->shop?->name]
+                ),
             ],
         ]);
     }

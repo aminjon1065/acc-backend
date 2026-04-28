@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\User;
+use App\UserRole;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -22,6 +23,7 @@ class DashboardService
     {
         [$from, $to, $period] = $this->resolvePeriod($filters);
         $shopId = $this->resolveShopId($user, $filters);
+        $sellerId = $this->resolveSellerId($user);
 
         $salesQuery = $this->scopeByShopAndPeriod(Sale::query(), $shopId, $from, $to);
         $expensesQuery = $this->scopeByShopAndPeriod(Expense::query(), $shopId, $from, $to);
@@ -33,6 +35,15 @@ class DashboardService
             $debtsQuery->where('shop_id', $shopId);
         }
 
+        if ($sellerId !== null) {
+            $salesQuery->where('user_id', $sellerId);
+            $expensesQuery->where('user_id', $sellerId);
+            $debtsQuery->where('user_id', $sellerId);
+        }
+
+        $salesTotal = (float) (clone $salesQuery)->sum('total');
+        $expensesTotal = (float) (clone $expensesQuery)->sum('total');
+
         $saleItemsQuery = SaleItem::query()
             ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
             ->whereBetween('sales.created_at', [$from, $to]);
@@ -41,8 +52,10 @@ class DashboardService
             $saleItemsQuery->where('sales.shop_id', $shopId);
         }
 
-        $salesTotal = (float) (clone $salesQuery)->sum('total');
-        $expensesTotal = (float) (clone $expensesQuery)->sum('total');
+        if ($sellerId !== null) {
+            $saleItemsQuery->where('sales.user_id', $sellerId);
+        }
+
         $costOfGoodsSold = (float) (clone $saleItemsQuery)
             ->selectRaw('COALESCE(SUM(sale_items.quantity * sale_items.cost_price), 0) as cogs')
             ->value('cogs');
@@ -83,7 +96,7 @@ class DashboardService
             'low_stock_count' => (int) ($productStats->low_stock_count ?? 0),
             'recent_sales' => $this->recentSales($salesQuery),
             'recent_expenses' => $this->recentExpenses($expensesQuery),
-            'recent_debt_transactions' => $this->recentDebtTransactions($shopId, $from, $to),
+            'recent_debt_transactions' => $this->recentDebtTransactions($shopId, $sellerId, $from, $to),
             'low_stock_products' => $this->lowStockProducts($productsQuery),
             'unpaid_debts' => $this->unpaidDebts($debtsQuery),
         ];
@@ -131,6 +144,15 @@ class DashboardService
         }
 
         return (int) $filters['shop_id'];
+    }
+
+    private function resolveSellerId(User $user): ?int
+    {
+        if ($user->role === UserRole::Seller) {
+            return (int) $user->id;
+        }
+
+        return null;
     }
 
     /**
@@ -196,11 +218,12 @@ class DashboardService
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function recentDebtTransactions(?int $shopId, CarbonImmutable $from, CarbonImmutable $to): array
+    private function recentDebtTransactions(?int $shopId, ?int $sellerId, CarbonImmutable $from, CarbonImmutable $to): array
     {
         return DebtTransaction::query()
             ->with(['debt', 'user'])
             ->when($shopId !== null, fn (Builder $query) => $query->where('shop_id', $shopId))
+            ->when($sellerId !== null, fn (Builder $query) => $query->where('user_id', $sellerId))
             ->whereBetween('created_at', [$from, $to])
             ->latest('created_at')
             ->limit(5)

@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\User;
+use App\Services\Api\V1\DashboardCacheVersion;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,11 +16,16 @@ use Illuminate\Support\Facades\Cache;
 
 class ReportController extends Controller
 {
+    public function __construct(
+        private readonly DashboardCacheVersion $cacheVersion,
+    ) {}
+
     public function sales(Request $request): JsonResponse
     {
         $user = $request->user();
         $shopId = $user->isSuperAdmin() ? 'sa_'.($request->shop_id ?? 'all') : $user->shop_id;
-        $cacheKey = "reports:sales:shop_{$shopId}:from_{$request->date_from}:to_{$request->date_to}";
+        $version = $this->cacheVersion->versionForShop(is_int($shopId) ? $shopId : null);
+        $cacheKey = "reports:sales:shop_{$shopId}:v{$version}:from_{$request->date_from}:to_{$request->date_to}";
 
         $data = Cache::remember($cacheKey, 300, function () use ($user, $request) {
             $sales = $this->scopeByDate($this->scopeSales($user, $request), $request)
@@ -73,7 +79,8 @@ class ReportController extends Controller
     {
         $user = $request->user();
         $shopId = $user->isSuperAdmin() ? 'sa_'.($request->shop_id ?? 'all') : $user->shop_id;
-        $cacheKey = "reports:expenses:shop_{$shopId}:from_{$request->date_from}:to_{$request->date_to}";
+        $version = $this->cacheVersion->versionForShop(is_int($shopId) ? $shopId : null);
+        $cacheKey = "reports:expenses:shop_{$shopId}:v{$version}:from_{$request->date_from}:to_{$request->date_to}";
 
         $data = Cache::remember($cacheKey, 300, function () use ($user, $request) {
             $expenses = $this->scopeByDate($this->scopeExpenses($user, $request), $request)
@@ -115,7 +122,8 @@ class ReportController extends Controller
     {
         $user = $request->user();
         $shopId = $user->isSuperAdmin() ? 'sa_'.($request->shop_id ?? 'all') : $user->shop_id;
-        $cacheKey = "reports:profit:shop_{$shopId}:from_{$request->date_from}:to_{$request->date_to}";
+        $version = $this->cacheVersion->versionForShop(is_int($shopId) ? $shopId : null);
+        $cacheKey = "reports:profit:shop_{$shopId}:v{$version}:from_{$request->date_from}:to_{$request->date_to}";
 
         $data = Cache::remember($cacheKey, 300, function () use ($user, $request) {
             $salesQuery = $this->scopeByDate($this->scopeSales($user, $request), $request);
@@ -153,7 +161,8 @@ class ReportController extends Controller
     {
         $user = $request->user();
         $shopId = $user->isSuperAdmin() ? 'sa_'.($request->shop_id ?? 'all') : $user->shop_id;
-        $cacheKey = "reports:stock:v2:shop_{$shopId}";
+        $version = $this->cacheVersion->versionForShop(is_int($shopId) ? $shopId : null);
+        $cacheKey = "reports:stock:v{$version}:shop_{$shopId}";
 
         $data = Cache::remember($cacheKey, 300, function () use ($user, $request) {
             $products = $this->scopeProducts($user, $request);

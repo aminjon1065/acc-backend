@@ -38,7 +38,7 @@ class MobileDemoSeeder extends Seeder
                 'name' => 'Mobile Demo Alpha',
                 'owner_name' => 'Owner Alpha',
                 'phone' => '+992900000001',
-                'email' => 'alpha.shop@ck-accounting.test',
+                'email' => '-во ',
                 'address' => 'Dushanbe, Rudaki avenue 11',
                 'status' => 'active',
             ]);

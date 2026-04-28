@@ -20,17 +20,36 @@ class DashboardController extends Controller
         $user = $request->user();
         $filters = $request->validated();
         $shopId = $user->isSuperAdmin() ? ($filters['shop_id'] ?? null) : $user->shop_id;
+        $sellerId = $user->role === \App\UserRole::Seller ? (int) $user->id : null;
         $period = $filters['period'] ?? 'day';
-        $dateFrom = $filters['date_from'] ?? 'null';
-        $dateTo = $filters['date_to'] ?? 'null';
-        $date = $filters['date'] ?? 'null';
+        $dateFrom = $filters['date_from'] ?? '__null__';
+        $dateTo = $filters['date_to'] ?? '__null__';
+        $date = $filters['date'] ?? '__null__';
 
         $version = $this->dashboardCacheVersion->versionForShop($shopId);
-        $cacheKey = "dashboard:shop_{$shopId}:period_{$period}:from_{$dateFrom}:to_{$dateTo}:date_{$date}:v{$version}";
+        $cacheKey = "dashboard:user_{$user->id}:shop_{$shopId}:seller_{$sellerId}:period_{$period}:from_{$dateFrom}:to_{$dateTo}:date_{$date}:v{$version}";
 
-        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($user, $filters) {
-            return $this->dashboardService->build($user, $filters);
-        });
+        // Sellers get fresh data always — their debts are user-scoped, cached data would be stale
+        $data = $sellerId !== null
+            ? $this->dashboardService->build($user, $filters)
+            : \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($user, $filters) {
+                return $this->dashboardService->build($user, $filters);
+            });
+
+        if ($sellerId !== null) {
+            // Strip cost/profit data from Seller responses
+            if (is_array($data)) {
+                unset($data['period_cogs']);
+                unset($data['period_profit']);
+                unset($data['period_expenses_total']);
+                unset($data['stock_total_cost']);
+            } elseif (is_object($data)) {
+                unset($data->period_cogs);
+                unset($data->period_profit);
+                unset($data->period_expenses_total);
+                unset($data->stock_total_cost);
+            }
+        }
 
         return response()->json([
             'success' => true,

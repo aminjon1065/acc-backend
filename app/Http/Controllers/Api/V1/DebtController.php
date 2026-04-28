@@ -134,4 +134,18 @@ class DebtController extends Controller
             ]),
         ]);
     }
+
+    public function destroy(Request $request, Debt $debt): JsonResponse
+    {
+        $this->authorize('delete', $debt);
+
+        $scopedDebt = $this->debts->findForUser($request->user(), $debt->id);
+        $this->debtService->deleteDebt($scopedDebt, $request->user());
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Debt deleted successfully.',
+            'data' => null,
+        ]);
+    }
 }

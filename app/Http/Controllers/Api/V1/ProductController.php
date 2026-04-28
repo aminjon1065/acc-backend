@@ -143,9 +143,23 @@ class ProductController extends Controller
 
         $scoped = $this->products->findForUser($request->user(), $product->id);
 
-        $purchaseMovements = PurchaseItem::query()
+        $isSeller = $request->user()->role === \App\UserRole::Seller;
+
+        $limit = min($request->integer('limit', 50), 200);
+        $cursor = $request->input('cursor'); // ISO timestamp for cursor-based pagination
+        $dateFrom = $request->date('date_from');
+        $dateTo = $request->date('date_to');
+
+        // Cursor is the created_at timestamp of the last item from previous page.
+        // Items strictly before cursor are excluded (strict inequality for stable pagination).
+        $purchaseMovements = $isSeller ? collect() : PurchaseItem::query()
             ->with(['purchase.user'])
             ->where('product_id', $scoped->id)
+            ->when($dateFrom, fn ($q) => $q->whereDate('created_at', '>=', $dateFrom))
+            ->when($dateTo, fn ($q) => $q->whereDate('created_at', '<=', $dateTo))
+            ->when($cursor, fn ($q) => $q->where('created_at', '<', $cursor))
+            ->latest()
+            ->limit($limit)
             ->get()
             ->map(function (PurchaseItem $item): array {
                 return [
@@ -163,8 +177,13 @@ class ProductController extends Controller
         $saleMovements = SaleItem::query()
             ->with(['sale.user'])
             ->where('product_id', $scoped->id)
+            ->when($dateFrom, fn ($q) => $q->whereDate('created_at', '>=', $dateFrom))
+            ->when($dateTo, fn ($q) => $q->whereDate('created_at', '<=', $dateTo))
+            ->when($cursor, fn ($q) => $q->where('created_at', '<', $cursor))
+            ->latest()
+            ->limit($limit)
             ->get()
-            ->map(function (SaleItem $item): array {
+            ->map(function (SaleItem $item) use ($isSeller): array {
                 return [
                     'type' => 'sale',
                     'quantity' => (float) $item->quantity,
@@ -173,15 +192,20 @@ class ProductController extends Controller
                     'created_at' => $item->created_at?->toISOString(),
                     'reference_id' => $item->sale_id,
                     'reference_type' => 'sale',
-                    'actor_name' => $item->sale?->user?->name,
+                    'actor_name' => $isSeller ? null : ($item->sale?->user?->name),
                 ];
             });
 
         $returnMovements = SaleReturnItem::query()
             ->with(['saleReturn.user'])
             ->where('product_id', $scoped->id)
+            ->when($dateFrom, fn ($q) => $q->whereDate('created_at', '>=', $dateFrom))
+            ->when($dateTo, fn ($q) => $q->whereDate('created_at', '<=', $dateTo))
+            ->when($cursor, fn ($q) => $q->where('created_at', '<', $cursor))
+            ->latest()
+            ->limit($limit)
             ->get()
-            ->map(function (SaleReturnItem $item): array {
+            ->map(function (SaleReturnItem $item) use ($isSeller): array {
                 return [
                     'type' => 'return',
                     'quantity' => (float) $item->quantity,
@@ -190,9 +214,25 @@ class ProductController extends Controller
                     'created_at' => $item->created_at?->toISOString(),
                     'reference_id' => $item->sale_return_id,
                     'reference_type' => 'return',
-                    'actor_name' => $item->saleReturn?->user?->name,
+                    'actor_name' => $isSeller ? null : ($item->saleReturn?->user?->name),
                 ];
             });
+
+        $movements = $purchaseMovements
+            ->concat($saleMovements)
+            ->concat($returnMovements)
+            ->sortByDesc('created_at')
+            ->values()
+            ->all();
+
+        // Build next cursor from last item's created_at
+        $nextCursor = null;
+        if (count($movements) === $limit) {
+            $lastCreatedAt = end($movements)['created_at'] ?? null;
+            if ($lastCreatedAt) {
+                $nextCursor = $lastCreatedAt;
+            }
+        }
 
         return response()->json([
             'success' => true,
@@ -200,12 +240,8 @@ class ProductController extends Controller
             'data' => [
                 'product_id' => $scoped->id,
                 'current_stock' => (float) $scoped->stock_quantity,
-                'movements' => $purchaseMovements
-                    ->concat($saleMovements)
-                    ->concat($returnMovements)
-                    ->sortByDesc('created_at')
-                    ->values()
-                    ->all(),
+                'movements' => $movements,
+                'next_cursor' => $nextCursor,
             ],
         ]);
     }

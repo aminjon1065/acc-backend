@@ -10,6 +10,7 @@ use App\Models\SaleReturn;
 use App\Models\User;
 use App\Repositories\Api\V1\SaleRepository;
 use App\Services\AuditLogger;
+use App\UserRole;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -77,6 +78,12 @@ class SaleService
                     }
 
                     $price = $this->resolveProductPrice($product, $quantity, $item);
+
+                    if ($actor->role === UserRole::Seller && $price < (float) $product->sale_price) {
+                        throw ValidationException::withMessages([
+                            'items' => ["Price for {$product->name} cannot be below the listed sale price."],
+                        ]);
+                    }
 
                     if ((float) $product->stock_quantity < $quantity) {
                         throw ValidationException::withMessages([
@@ -459,6 +466,7 @@ class SaleService
             ], $shopId);
 
             $this->productCatalogCache->bumpShop($shopId);
+            $this->dashboardCacheVersion->bumpShop($shopId);
 
             return $returnRecord->fresh(['items']);
         });

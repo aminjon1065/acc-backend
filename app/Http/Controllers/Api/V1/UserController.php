@@ -109,6 +109,7 @@ class UserController extends Controller
         $data = $request->validated();
 
         if ($actor->role === UserRole::Seller) {
+            abort_if($actor->id !== $user->id, 403, 'Sellers can only update their own profile.');
             unset($data['role'], $data['shop_id']);
         } elseif ($actor->role === UserRole::Owner) {
             if ($actor->id === $user->id) {
@@ -147,6 +148,8 @@ class UserController extends Controller
     public function destroy(Request $request, User $user): JsonResponse
     {
         $this->authorize('delete', $user);
+
+        abort_if($request->user()->id === $user->id, 422, 'You cannot delete your own account.');
 
         $user->delete();
 

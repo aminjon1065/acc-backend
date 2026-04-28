@@ -104,4 +104,19 @@ class DebtService
             return $freshDebt;
         });
     }
+
+    public function deleteDebt(Debt $debt, User $actor): void
+    {
+        $shopId = (int) $debt->shop_id;
+
+        $debt->transactions()->delete();
+        $debt->delete();
+
+        $this->auditLogger->log('debts.deleted', $actor, $debt, [
+            'person_name' => $debt->person_name,
+            'balance' => (float) $debt->balance,
+        ], $shopId);
+
+        $this->dashboardCacheVersion->bumpShop($shopId);
+    }
 }

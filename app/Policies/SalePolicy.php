@@ -15,7 +15,20 @@ class SalePolicy
 
     public function view(User $user, Sale $sale): bool
     {
-        return $user->isSuperAdmin() || $this->inSameShop($user, $sale->shop_id);
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if (! $this->inSameShop($user, $sale->shop_id)) {
+            return false;
+        }
+
+        // Seller can only view their own sales
+        if ($user->role === UserRole::Seller) {
+            return $sale->user_id === $user->id;
+        }
+
+        return true;
     }
 
     public function create(User $user): bool
@@ -25,7 +38,11 @@ class SalePolicy
 
     public function update(User $user, Sale $sale): bool
     {
-        return false;
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        return $user->role === UserRole::Owner && (int) $user->shop_id === (int) $sale->shop_id;
     }
 
     public function delete(User $user, Sale $sale): bool

@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api\V1;
 
+use App\UserRole;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Storage;
@@ -19,13 +20,16 @@ class ProductResource extends JsonResource
             ? rtrim($request->getSchemeAndHttpHost(), '/').Storage::disk('public')->url($this->image_path)
             : null;
 
+        $isSeller = $request->user()?->role === UserRole::Seller
+            || (is_string($request->user()?->role) && $request->user()?->role === 'seller');
+
         return [
             'id' => $this->id,
             'shop_id' => $this->shop_id,
             'name' => $this->name,
             'code' => $this->code,
             'unit' => $this->unit,
-            'cost_price' => (float) $this->cost_price,
+            'cost_price' => $isSeller ? null : (float) $this->cost_price,
             'sale_price' => (float) $this->sale_price,
             'pricing_mode' => $this->pricing_mode,
             'markup_percent' => $this->markup_percent !== null ? (float) $this->markup_percent : null,

@@ -4,6 +4,7 @@ namespace App\Repositories\Api\V1;
 
 use App\Models\Debt;
 use App\Models\User;
+use App\UserRole;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -17,7 +18,9 @@ class DebtRepository
     {
         $query = Debt::query();
 
-        if (! $user->isSuperAdmin()) {
+        if ($user->role === UserRole::Seller) {
+            $query->where('user_id', $user->id);
+        } elseif (! $user->isSuperAdmin()) {
             $query->where('shop_id', $user->shop_id);
         }
 
