@@ -9,18 +9,22 @@ use Illuminate\Support\Facades\Hash;
 
 class AdminUserSeeder extends Seeder
 {
+    private const ADMIN_EMAIL = 'admin@ck.top';
+
+    private const ADMIN_PASSWORD = 'Demo12345!';
+
     /**
      * Run the database seeds.
      */
     public function run(): void
     {
         $admin = User::query()->updateOrCreate(
-            ['email' => 'admin@ck-accounting.test'],
+            ['email' => self::ADMIN_EMAIL],
             [
-                'name' => 'Super Admin',
+                'name' => 'CK Top Admin',
                 'shop_id' => null,
                 'role' => UserRole::SuperAdmin->value,
-                'password' => Hash::make('Momajon115877!'),
+                'password' => Hash::make(self::ADMIN_PASSWORD),
             ]
         );
 

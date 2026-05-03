@@ -24,7 +24,53 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 class MobileDemoSeeder extends Seeder
 {
-    private const DEMO_PASSWORD = 'MobileTest123!';
+    private const DEMO_PASSWORD = 'Demo12345!';
+
+    /**
+     * @var array<string, array{name: string, email: string, role: UserRole}>
+     */
+    private const DEMO_USERS = [
+        'alphaOwner' => [
+            'name' => 'Фарзона Каримова',
+            'email' => 'farzona@ck.top',
+            'role' => UserRole::Owner,
+        ],
+        'alphaSellerOne' => [
+            'name' => 'Далер Саидов',
+            'email' => 'daler@ck.top',
+            'role' => UserRole::Seller,
+        ],
+        'alphaSellerTwo' => [
+            'name' => 'Нилуфар Юсупова',
+            'email' => 'nilufar@ck.top',
+            'role' => UserRole::Seller,
+        ],
+        'betaOwner' => [
+            'name' => 'Камол Набиев',
+            'email' => 'kamol@ck.top',
+            'role' => UserRole::Owner,
+        ],
+        'betaSellerOne' => [
+            'name' => 'Зебо Хасанова',
+            'email' => 'zebo@ck.top',
+            'role' => UserRole::Seller,
+        ],
+        'betaSellerTwo' => [
+            'name' => 'Рустам Мирзоев',
+            'email' => 'rustam@ck.top',
+            'role' => UserRole::Seller,
+        ],
+        'gammaOwner' => [
+            'name' => 'Мохира Ашурова',
+            'email' => 'mohira@ck.top',
+            'role' => UserRole::Owner,
+        ],
+        'gammaSeller' => [
+            'name' => 'Сиёвуш Рахимов',
+            'email' => 'siyovush@ck.top',
+            'role' => UserRole::Seller,
+        ],
+    ];
 
     /**
      * Run the database seeds.
@@ -35,44 +81,44 @@ class MobileDemoSeeder extends Seeder
             $this->seedCurrencies();
 
             $alphaShop = $this->upsertShop([
-                'name' => 'Mobile Demo Alpha',
-                'owner_name' => 'Owner Alpha',
-                'phone' => '+992900000001',
-                'email' => '-во ',
-                'address' => 'Dushanbe, Rudaki avenue 11',
+                'name' => 'Сомон Маркет',
+                'owner_name' => self::DEMO_USERS['alphaOwner']['name'],
+                'phone' => '+992900000101',
+                'email' => 'somon@ck.top',
+                'address' => 'Душанбе, проспект Рудаки 11',
                 'status' => 'active',
             ]);
 
             $betaShop = $this->upsertShop([
-                'name' => 'Mobile Demo Beta',
-                'owner_name' => 'Owner Beta',
-                'phone' => '+992900000002',
-                'email' => 'beta.shop@ck-accounting.test',
-                'address' => 'Khujand, Somoni street 24',
+                'name' => 'Сугд Минимаркет',
+                'owner_name' => self::DEMO_USERS['betaOwner']['name'],
+                'phone' => '+992900000102',
+                'email' => 'sugd@ck.top',
+                'address' => 'Худжанд, улица Сомони 24',
                 'status' => 'active',
             ]);
 
             $gammaShop = $this->upsertShop([
-                'name' => 'Mobile Demo Gamma',
-                'owner_name' => 'Owner Gamma',
-                'phone' => '+992900000003',
-                'email' => 'gamma.shop@ck-accounting.test',
-                'address' => 'Bokhtar, Ismoili Somoni street 7',
+                'name' => 'Орзу Канцтовары',
+                'owner_name' => self::DEMO_USERS['gammaOwner']['name'],
+                'phone' => '+992900000103',
+                'email' => 'orzu@ck.top',
+                'address' => 'Бохтар, улица Исмоили Сомони 7',
                 'status' => 'suspended',
             ]);
 
             $this->cleanupDemoData([$alphaShop, $betaShop, $gammaShop]);
 
-            $alphaOwner = $this->createDemoUser('owner.alpha@ck-accounting.test', 'Owner Alpha', UserRole::Owner, $alphaShop->id);
-            $alphaSellerOne = $this->createDemoUser('seller.alpha.1@ck-accounting.test', 'Seller Alpha 1', UserRole::Seller, $alphaShop->id);
-            $alphaSellerTwo = $this->createDemoUser('seller.alpha.2@ck-accounting.test', 'Seller Alpha 2', UserRole::Seller, $alphaShop->id);
+            $alphaOwner = $this->createDemoUserByKey('alphaOwner', $alphaShop->id);
+            $alphaSellerOne = $this->createDemoUserByKey('alphaSellerOne', $alphaShop->id);
+            $alphaSellerTwo = $this->createDemoUserByKey('alphaSellerTwo', $alphaShop->id);
 
-            $betaOwner = $this->createDemoUser('owner.beta@ck-accounting.test', 'Owner Beta', UserRole::Owner, $betaShop->id);
-            $betaSellerOne = $this->createDemoUser('seller.beta.1@ck-accounting.test', 'Seller Beta 1', UserRole::Seller, $betaShop->id);
-            $betaSellerTwo = $this->createDemoUser('seller.beta.2@ck-accounting.test', 'Seller Beta 2', UserRole::Seller, $betaShop->id);
+            $betaOwner = $this->createDemoUserByKey('betaOwner', $betaShop->id);
+            $betaSellerOne = $this->createDemoUserByKey('betaSellerOne', $betaShop->id);
+            $betaSellerTwo = $this->createDemoUserByKey('betaSellerTwo', $betaShop->id);
 
-            $gammaOwner = $this->createDemoUser('owner.gamma@ck-accounting.test', 'Owner Gamma', UserRole::Owner, $gammaShop->id);
-            $gammaSeller = $this->createDemoUser('seller.gamma.1@ck-accounting.test', 'Seller Gamma 1', UserRole::Seller, $gammaShop->id);
+            $gammaOwner = $this->createDemoUserByKey('gammaOwner', $gammaShop->id);
+            $gammaSeller = $this->createDemoUserByKey('gammaSeller', $gammaShop->id);
 
             $this->createShopSetting($alphaShop->id, 'TJS', 2.50);
             $this->createShopSetting($betaShop->id, 'USD', 1.75);
@@ -180,7 +226,7 @@ class MobileDemoSeeder extends Seeder
             $this->createPurchase(
                 $alphaShop->id,
                 $alphaOwner->id,
-                'Dushanbe Food Supply',
+                'ООО Душанбе Фуд Саплай',
                 Carbon::now()->subDays(12),
                 [
                     ['product_id' => $alphaProducts['ALPHA-COLA-1L']->id, 'quantity' => 80, 'price' => 8.50],
@@ -190,7 +236,7 @@ class MobileDemoSeeder extends Seeder
             $this->createPurchase(
                 $alphaShop->id,
                 $alphaSellerOne->id,
-                'Oil Import LLC',
+                'Ойл Импорт',
                 Carbon::now()->subDays(8),
                 [
                     ['product_id' => $alphaProducts['ALPHA-OIL-1L']->id, 'quantity' => 24, 'price' => 18.00],
@@ -201,7 +247,7 @@ class MobileDemoSeeder extends Seeder
             $this->createPurchase(
                 $betaShop->id,
                 $betaOwner->id,
-                'Khujand Retail Group',
+                'Худжанд Ритейл Групп',
                 Carbon::now()->subDays(11),
                 [
                     ['product_id' => $betaProducts['BETA-CHOCO-90G']->id, 'quantity' => 120, 'price' => 4.20],
@@ -211,7 +257,7 @@ class MobileDemoSeeder extends Seeder
             $this->createPurchase(
                 $betaShop->id,
                 $betaSellerOne->id,
-                'Northern Grain Hub',
+                'Северный Зерновой Склад',
                 Carbon::now()->subDays(6),
                 [
                     ['product_id' => $betaProducts['BETA-RICE-25KG']->id, 'quantity' => 60, 'price' => 7.10],
@@ -222,7 +268,7 @@ class MobileDemoSeeder extends Seeder
             $this->createPurchase(
                 $gammaShop->id,
                 $gammaOwner->id,
-                'School Goods Market',
+                'Школьный Базар',
                 Carbon::now()->subDays(10),
                 [
                     ['product_id' => $gammaProducts['GAMMA-NOTE-80']->id, 'quantity' => 20, 'price' => 7.00],
@@ -233,7 +279,7 @@ class MobileDemoSeeder extends Seeder
             $this->createSale(
                 $alphaShop->id,
                 $alphaSellerOne->id,
-                'Customer Alpha 1',
+                'Мунира Сафарова',
                 5.00,
                 61.00,
                 'cash',
@@ -246,7 +292,7 @@ class MobileDemoSeeder extends Seeder
             $this->createSale(
                 $alphaShop->id,
                 $alphaSellerTwo->id,
-                'Cafe Rudaki',
+                'Кафе Рудаки',
                 0.00,
                 58.50,
                 'transfer',
@@ -259,7 +305,7 @@ class MobileDemoSeeder extends Seeder
             $this->createSale(
                 $alphaShop->id,
                 $alphaSellerOne->id,
-                'Customer Alpha 2',
+                'Саидмурод Назаров',
                 2.00,
                 20.00,
                 'card',
@@ -272,7 +318,7 @@ class MobileDemoSeeder extends Seeder
             $this->createSale(
                 $betaShop->id,
                 $betaSellerOne->id,
-                'Customer Beta 1',
+                'Азиза Назирова',
                 0.00,
                 39.00,
                 'cash',
@@ -284,7 +330,7 @@ class MobileDemoSeeder extends Seeder
             $this->createSale(
                 $betaShop->id,
                 $betaSellerTwo->id,
-                'Office Beta',
+                'Офис Сугд Трейд',
                 3.00,
                 52.60,
                 'card',
@@ -297,7 +343,7 @@ class MobileDemoSeeder extends Seeder
             $this->createSale(
                 $betaShop->id,
                 $betaSellerOne->id,
-                'Family Beta',
+                'Семья Каримовых',
                 0.00,
                 28.80,
                 'transfer',
@@ -310,7 +356,7 @@ class MobileDemoSeeder extends Seeder
             $this->createSale(
                 $gammaShop->id,
                 $gammaSeller->id,
-                'School Client',
+                'Школа №15',
                 0.00,
                 17.50,
                 'cash',
@@ -321,55 +367,55 @@ class MobileDemoSeeder extends Seeder
                 ],
             );
 
-            $this->createExpense($alphaShop->id, $alphaOwner->id, 'Delivery', 2, 35.00, 'Weekly supplier delivery', Carbon::now()->subDays(9));
-            $this->createExpense($alphaShop->id, $alphaSellerTwo->id, 'Packaging', 10, 3.50, 'Plastic bags and boxes', Carbon::now()->subDays(5));
-            $this->createExpense($alphaShop->id, $alphaOwner->id, 'Internet', 1, 180.00, 'Monthly internet payment', Carbon::now()->subDays(1));
+            $this->createExpense($alphaShop->id, $alphaOwner->id, 'Доставка', 2, 35.00, 'Еженедельная доставка от поставщика', Carbon::now()->subDays(9));
+            $this->createExpense($alphaShop->id, $alphaSellerTwo->id, 'Упаковка', 10, 3.50, 'Пакеты и коробки для покупателей', Carbon::now()->subDays(5));
+            $this->createExpense($alphaShop->id, $alphaOwner->id, 'Интернет', 1, 180.00, 'Оплата интернета за месяц', Carbon::now()->subDays(1));
 
-            $this->createExpense($betaShop->id, $betaOwner->id, 'Taxi delivery', 3, 28.00, 'City delivery costs', Carbon::now()->subDays(8));
-            $this->createExpense($betaShop->id, $betaSellerOne->id, 'Cleaning', 4, 12.50, 'Store cleaning supplies', Carbon::now()->subDays(4));
-            $this->createExpense($betaShop->id, $betaOwner->id, 'Electricity', 1, 240.00, 'Monthly bill', Carbon::now()->subDays(1));
+            $this->createExpense($betaShop->id, $betaOwner->id, 'Доставка на такси', 3, 28.00, 'Городские расходы на доставку', Carbon::now()->subDays(8));
+            $this->createExpense($betaShop->id, $betaSellerOne->id, 'Уборка', 4, 12.50, 'Чистящие средства для магазина', Carbon::now()->subDays(4));
+            $this->createExpense($betaShop->id, $betaOwner->id, 'Электричество', 1, 240.00, 'Ежемесячный счет за свет', Carbon::now()->subDays(1));
 
-            $this->createExpense($gammaShop->id, $gammaOwner->id, 'Shelf repair', 1, 90.00, 'Suspended shop maintenance', Carbon::now()->subDays(3));
+            $this->createExpense($gammaShop->id, $gammaOwner->id, 'Ремонт полки', 1, 90.00, 'Поддержка магазина в период паузы', Carbon::now()->subDays(3));
 
             $this->createDebt(
                 $alphaShop->id,
                 $alphaSellerOne->id,
-                'Cafe Rudaki',
+                'Кафе Рудаки',
                 Carbon::now()->subDays(6),
                 [
-                    ['type' => 'give', 'amount' => 120.00, 'note' => 'Goods on credit', 'created_at' => Carbon::now()->subDays(6)],
-                    ['type' => 'repay', 'amount' => 45.00, 'note' => 'Partial repayment', 'created_at' => Carbon::now()->subDays(2)],
+                    ['type' => 'give', 'amount' => 120.00, 'note' => 'Товар в долг', 'created_at' => Carbon::now()->subDays(6)],
+                    ['type' => 'repay', 'amount' => 45.00, 'note' => 'Частичное погашение', 'created_at' => Carbon::now()->subDays(2)],
                 ],
             );
             $this->createDebt(
                 $alphaShop->id,
                 $alphaOwner->id,
-                'Neighbour Store',
+                'Соседний магазин',
                 Carbon::now()->subDays(10),
                 [
-                    ['type' => 'give', 'amount' => 60.00, 'note' => 'Opening balance', 'created_at' => Carbon::now()->subDays(10)],
-                    ['type' => 'take', 'amount' => 15.00, 'note' => 'Returned goods', 'created_at' => Carbon::now()->subDays(3)],
+                    ['type' => 'give', 'amount' => 60.00, 'note' => 'Стартовый долг', 'created_at' => Carbon::now()->subDays(10)],
+                    ['type' => 'take', 'amount' => 15.00, 'note' => 'Возврат товара', 'created_at' => Carbon::now()->subDays(3)],
                 ],
             );
 
             $this->createDebt(
                 $betaShop->id,
                 $betaSellerTwo->id,
-                'Family Beta',
+                'Семья Каримовых',
                 Carbon::now()->subDays(4),
                 [
-                    ['type' => 'give', 'amount' => 80.00, 'note' => 'Deferred payment', 'created_at' => Carbon::now()->subDays(4)],
-                    ['type' => 'repay', 'amount' => 25.00, 'note' => 'Cash repayment', 'created_at' => Carbon::now()->subDay()],
+                    ['type' => 'give', 'amount' => 80.00, 'note' => 'Отсроченный платеж', 'created_at' => Carbon::now()->subDays(4)],
+                    ['type' => 'repay', 'amount' => 25.00, 'note' => 'Погашение наличными', 'created_at' => Carbon::now()->subDay()],
                 ],
             );
 
             $this->createDebt(
                 $gammaShop->id,
                 $gammaOwner->id,
-                'School 15',
+                'Школа №15',
                 Carbon::now()->subDays(5),
                 [
-                    ['type' => 'give', 'amount' => 35.00, 'note' => 'Stationery on credit', 'created_at' => Carbon::now()->subDays(5)],
+                    ['type' => 'give', 'amount' => 35.00, 'note' => 'Канцтовары в долг', 'created_at' => Carbon::now()->subDays(5)],
                 ],
             );
 
@@ -396,16 +442,7 @@ class MobileDemoSeeder extends Seeder
     {
         $shopIds = array_map(fn (Shop $shop): int => $shop->id, $shops);
 
-        $demoUserEmails = [
-            'owner.alpha@ck-accounting.test',
-            'seller.alpha.1@ck-accounting.test',
-            'seller.alpha.2@ck-accounting.test',
-            'owner.beta@ck-accounting.test',
-            'seller.beta.1@ck-accounting.test',
-            'seller.beta.2@ck-accounting.test',
-            'owner.gamma@ck-accounting.test',
-            'seller.gamma.1@ck-accounting.test',
-        ];
+        $demoUserEmails = $this->demoUserEmails();
 
         $demoUserIds = User::query()
             ->whereIn('email', $demoUserEmails)
@@ -460,6 +497,29 @@ class MobileDemoSeeder extends Seeder
             'password' => Hash::make(self::DEMO_PASSWORD),
             'email_verified_at' => now(),
         ]);
+    }
+
+    private function createDemoUserByKey(string $key, int $shopId): User
+    {
+        $user = self::DEMO_USERS[$key];
+
+        return $this->createDemoUser(
+            $user['email'],
+            $user['name'],
+            $user['role'],
+            $shopId,
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function demoUserEmails(): array
+    {
+        return array_values(array_map(
+            static fn (array $user): string => $user['email'],
+            self::DEMO_USERS,
+        ));
     }
 
     private function createShopSetting(int $shopId, string $currencyCode, float $taxPercent): ShopSetting
