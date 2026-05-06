@@ -54,6 +54,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
             'role' => UserRole::class,
+            'pin_reset_required' => 'boolean',
         ];
     }
 

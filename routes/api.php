@@ -73,6 +73,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('users/{user}', [UserController::class, 'show'])->middleware('api_ability:users,view');
         Route::match(['put', 'patch'], 'users/{user}', [UserController::class, 'update'])->middleware(['api_ability:users,update', 'idempotent']);
         Route::delete('users/{user}', [UserController::class, 'destroy'])->middleware(['api_ability:users,delete', 'idempotent']);
+        Route::post('users/{user}/reset-pin', [UserController::class, 'resetPin'])->middleware(['api_ability:users,resetPin', 'idempotent']);
 
         Route::get('settings', [ShopSettingController::class, 'show'])->middleware('api_ability:settings,view');
         Route::match(['put', 'patch'], 'settings', [ShopSettingController::class, 'update'])->middleware(['api_ability:settings,update', 'idempotent']);

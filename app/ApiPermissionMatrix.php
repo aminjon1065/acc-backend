@@ -64,6 +64,7 @@ final class ApiPermissionMatrix
             'create' => ['super_admin', 'owner'],
             'update' => ['super_admin', 'owner'],
             'delete' => ['super_admin', 'owner'],
+            'resetPin' => ['super_admin'],
         ],
         'settings' => [
             'view' => ['super_admin', 'owner'],

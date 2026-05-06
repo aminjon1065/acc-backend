@@ -26,8 +26,22 @@ class ShopController extends Controller
             $shops->whereKey($request->user()->shop_id);
         }
 
+        // Delta-sync support: clients pass updated_since to receive only
+        // records changed after their last sync, plus soft-deleted rows so
+        // local copies can be removed.
+        if ($request->filled('updated_since')) {
+            $shops->where('updated_at', '>', $request->input('updated_since'));
+            $shops->withTrashed();
+        }
+
+        if ($request->filled('updated_before')) {
+            $shops->where('updated_at', '<', $request->input('updated_before'));
+        }
+
         return ShopResource::collection(
-            $shops->latest('id')->paginate($request->integer('limit', 20))->withQueryString()
+            $shops->orderByDesc('updated_at')->orderByDesc('id')
+                ->paginate($request->integer('limit', 20))
+                ->withQueryString()
         );
     }
 

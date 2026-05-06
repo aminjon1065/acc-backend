@@ -22,6 +22,7 @@ class UserResource extends JsonResource
             'name' => $this->name,
             'email' => $this->email,
             'role' => $role instanceof \BackedEnum ? $role->value : $role,
+            'pin_reset_required' => (bool) $this->pin_reset_required,
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];

@@ -50,6 +50,14 @@ class AuthController extends Controller
             'token_id' => $newToken->accessToken->id,
         ]);
 
+        $pinResetRequired = (bool) $user->pin_reset_required;
+
+        // Consume the flag once the user is authenticating again — the mobile
+        // client will clear the local PIN and force a fresh setup.
+        if ($pinResetRequired) {
+            $user->forceFill(['pin_reset_required' => false])->save();
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Authenticated.',
@@ -58,7 +66,10 @@ class AuthController extends Controller
                 'token_type' => 'Bearer',
                 'user' => array_merge(
                     $user->only(['id', 'shop_id', 'name', 'email', 'role']),
-                    ['shop_name' => $user->shop?->name]
+                    [
+                        'shop_name' => $user->shop?->name,
+                        'pin_reset_required' => $pinResetRequired,
+                    ]
                 ),
             ],
         ]);
@@ -74,7 +85,10 @@ class AuthController extends Controller
             'message' => '',
             'data' => array_merge(
                 $user->only(['id', 'shop_id', 'name', 'email', 'role']),
-                ['shop_name' => $user->shop?->name]
+                [
+                    'shop_name' => $user->shop?->name,
+                    'pin_reset_required' => (bool) $user->pin_reset_required,
+                ]
             ),
         ]);
     }

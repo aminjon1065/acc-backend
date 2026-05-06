@@ -143,6 +143,31 @@ class UserController extends Controller
     }
 
     /**
+     * Mark a user as requiring PIN reset on their next login.
+     *
+     * The next time the user authenticates, the mobile client clears the local
+     * PIN hash, the server clears the flag, and the user is forced through PIN
+     * setup again. Invalidating Sanctum tokens guarantees the device cannot
+     * keep using a session that bypassed the new PIN.
+     */
+    public function resetPin(Request $request, User $user): JsonResponse
+    {
+        $actor = $request->user();
+
+        abort_unless($actor !== null && $actor->isSuperAdmin(), 403);
+        abort_if($actor->id === $user->id, 422, 'Use the standard PIN flow for your own account.');
+
+        $user->forceFill(['pin_reset_required' => true])->save();
+        $user->tokens()->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'PIN reset queued. The user will be asked to set a new PIN on next login.',
+            'data' => new UserResource($user->refresh()),
+        ]);
+    }
+
+    /**
      * Remove the specified resource from storage.
      */
     public function destroy(Request $request, User $user): JsonResponse
