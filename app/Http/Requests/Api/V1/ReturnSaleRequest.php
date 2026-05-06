@@ -23,7 +23,7 @@ class ReturnSaleRequest extends FormRequest
     {
         return [
             'items' => ['required', 'array', 'min:1'],
-            'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
+            'items.*.product_id' => ['required', 'string', 'exists:products,id'],
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
             'reason' => ['nullable', 'string', 'max:1000'],
             'refund_method' => ['nullable', 'string', 'in:cash,card,transfer,offset_debt'],

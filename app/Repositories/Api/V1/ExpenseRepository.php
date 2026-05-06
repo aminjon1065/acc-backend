@@ -24,7 +24,7 @@ class ExpenseRepository
         return $query;
     }
 
-    public function findForUser(User $user, int $id): Expense
+    public function findForUser(User $user, string $id): Expense
     {
         return $this->queryForUser($user)->findOrFail($id);
     }
@@ -38,7 +38,7 @@ class ExpenseRepository
                 $decoded = json_decode(base64_decode($request->input('cursor')), true);
                 if (is_array($decoded) && isset($decoded['updated_at'], $decoded['id'])) {
                     $cursorUpdatedAt = $decoded['updated_at'];
-                    $cursorId = (int) $decoded['id'];
+                    $cursorId = (string) $decoded['id'];
                     // For ORDER BY updated_at DESC, id DESC: get older records after the cursor.
                     $query->where(function (Builder $q) use ($cursorUpdatedAt, $cursorId): void {
                         $q->where('updated_at', '<', $cursorUpdatedAt)

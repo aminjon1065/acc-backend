@@ -9,6 +9,13 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // SQLite (used in tests) does not support ALTER TABLE MODIFY COLUMN.
+        // Skip — on SQLite the parent migrations should already create id as
+        // CHAR(36) / uuid (and FKs accordingly) so this conversion is a no-op.
+        if (DB::getDriverName() !== 'mysql') {
+            return;
+        }
+
         // MySQL 8 requires explicitly dropping FK constraints before modifying
         // referenced/referencing columns, even with FOREIGN_KEY_CHECKS=0.
         // Drop all affected FKs, alter columns, then restore FKs.
@@ -85,6 +92,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::getDriverName() !== 'mysql') {
+            return;
+        }
+
         Schema::table('purchase_items', function (Blueprint $table) {
             $table->dropForeign(['purchase_id']);
             $table->dropForeign(['product_id']);

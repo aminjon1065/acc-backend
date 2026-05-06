@@ -50,7 +50,7 @@ class PurchaseRepository
     /**
      * @param  array<int, string>  $relations
      */
-    public function findForUser(User $user, int $id, array $relations = []): Purchase
+    public function findForUser(User $user, string $id, array $relations = []): Purchase
     {
         $query = $this->queryForUser($user);
 
@@ -79,7 +79,7 @@ class PurchaseRepository
                 $decoded = json_decode(base64_decode($request->input('cursor')), true);
                 if (is_array($decoded) && isset($decoded['updated_at'], $decoded['id'])) {
                     $cursorUpdatedAt = $decoded['updated_at'];
-                    $cursorId = (int) $decoded['id'];
+                    $cursorId = (string) $decoded['id'];
                     // For ORDER BY updated_at DESC, id DESC: get older records after the cursor.
                     $query->where(function (Builder $q) use ($cursorUpdatedAt, $cursorId): void {
                         $q->where('updated_at', '<', $cursorUpdatedAt)

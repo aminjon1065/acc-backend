@@ -26,7 +26,7 @@ class ProductRepository
         return $query;
     }
 
-    public function findForUser(User $user, int $id): Product
+    public function findForUser(User $user, string $id): Product
     {
         return $this->queryForUser($user)->findOrFail($id);
     }
@@ -71,7 +71,7 @@ class ProductRepository
                 $decoded = json_decode(base64_decode($request->input('cursor')), true);
                 if (is_array($decoded) && isset($decoded['updated_at'], $decoded['id'])) {
                     $cursorUpdatedAt = $decoded['updated_at'];
-                    $cursorId = (int) $decoded['id'];
+                    $cursorId = (string) $decoded['id'];
                     // Records strictly before the cursor: older updated_at,
                     // OR same updated_at but smaller id.
                     $query->where(function (Builder $q) use ($cursorUpdatedAt, $cursorId): void {

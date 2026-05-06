@@ -34,7 +34,7 @@ class UpdateSaleRequest extends FormRequest
             'items' => ['nullable', 'array', 'min:1'],
             'items.*.product_id' => [
                 'nullable',
-                'integer',
+                'string',
                 'exists:products,id',
             ],
             'items.*.name' => [
