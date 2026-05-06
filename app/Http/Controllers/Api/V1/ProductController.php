@@ -127,6 +127,15 @@ class ProductController extends Controller
     {
         $this->authorize('delete', $product);
 
+        $clientVersion = $request->integer('version');
+        if ($clientVersion && $product->version !== $clientVersion) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Conflict: product was modified by another client.',
+                'server_data' => new ProductResource($this->products->findForUser($request->user(), $product->id)),
+            ], 409);
+        }
+
         $scoped = $this->products->findForUser($request->user(), $product->id);
         $this->productService->deleteProduct($scoped);
 

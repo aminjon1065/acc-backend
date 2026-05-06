@@ -26,6 +26,7 @@ class StoreProductRequest extends FormRequest
         $shopId = $this->user()?->isSuperAdmin() ? $this->input('shop_id') : $this->user()?->shop_id;
 
         return [
+            'id' => ['nullable', 'string', 'max:36'],
             'shop_id' => [Rule::requiredIf(fn () => $this->user()?->isSuperAdmin()), 'integer', 'exists:shops,id'],
             'name' => ['required', 'string', 'max:255'],
             'code' => [

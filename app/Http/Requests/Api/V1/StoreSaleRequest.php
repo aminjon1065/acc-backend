@@ -26,6 +26,7 @@ class StoreSaleRequest extends FormRequest
         $isProductType = $type !== 'service';
 
         return [
+            'id' => ['nullable', 'string', 'max:36'],
             'shop_id' => ['nullable', 'integer', 'exists:shops,id'],
             'customer_name' => ['nullable', 'string', 'max:255'],
             'discount' => ['nullable', 'numeric', 'min:0'],
@@ -35,7 +36,7 @@ class StoreSaleRequest extends FormRequest
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => [
                 'nullable',
-                'integer',
+                'string',
                 'exists:products,id',
                 Rule::requiredIf($isProductType),
             ],
@@ -66,7 +67,7 @@ class StoreSaleRequest extends FormRequest
                         return;
                     }
 
-                    $product = \App\Models\Product::find($productId);
+                    $product = \App\Models\Product::find((string) $productId);
                     if ($product && $product->cost_price !== null && $price < (float) $product->cost_price) {
                         $fail("Price cannot be below cost price ({$product->cost_price}) for product \"{$product->name}\".");
                     }

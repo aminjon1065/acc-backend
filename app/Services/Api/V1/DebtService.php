@@ -17,16 +17,22 @@ class DebtService
         private readonly DashboardCacheVersion $dashboardCacheVersion,
     ) {}
 
-    public function createDebt(User $actor, int $shopId, string $personName, string $direction, float $openingBalance): Debt
+    public function createDebt(User $actor, int $shopId, string $personName, string $direction, float $openingBalance, ?string $id = null): Debt
     {
-        return DB::transaction(function () use ($actor, $shopId, $personName, $direction, $openingBalance): Debt {
-            $debt = $this->debts->create([
+        return DB::transaction(function () use ($actor, $shopId, $personName, $direction, $openingBalance, $id): Debt {
+            $attributes = [
                 'shop_id' => $shopId,
                 'user_id' => $actor->id,
                 'person_name' => $personName,
                 'direction' => $direction,
                 'balance' => $openingBalance,
-            ]);
+            ];
+
+            if ($id) {
+                $attributes['id'] = $id;
+            }
+
+            $debt = $this->debts->create($attributes);
 
             if ($openingBalance > 0) {
                 $debt->transactions()->create([
@@ -53,9 +59,9 @@ class DebtService
         });
     }
 
-    public function storeTransaction(Debt $debt, User $actor, string $type, float $amount, ?string $note): Debt
+    public function storeTransaction(Debt $debt, User $actor, string $type, float $amount, ?string $note, ?string $transactionId = null): Debt
     {
-        return DB::transaction(function () use ($debt, $actor, $type, $amount, $note): Debt {
+        return DB::transaction(function () use ($debt, $actor, $type, $amount, $note, $transactionId): Debt {
             // Lock BEFORE reading balance — prevents race condition where concurrent
             // requests both read the same balance, both pass validation, then both write
             $debt->lockForUpdate();
@@ -74,13 +80,19 @@ class DebtService
                 'take', 'repay' => -$amount,
             };
 
-            $debt->transactions()->create([
+            $txAttributes = [
                 'shop_id' => $debt->shop_id,
                 'user_id' => $actor->id,
                 'type' => $type,
                 'amount' => $amount,
                 'note' => $note,
-            ]);
+            ];
+
+            if ($transactionId) {
+                $txAttributes['id'] = $transactionId;
+            }
+
+            $debt->transactions()->create($txAttributes);
 
             // Atomic increment using raw query builder to avoid Eloquent cast collision
             // with DB::raw expressions on decimal-cast columns.

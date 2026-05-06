@@ -22,6 +22,7 @@ class StoreDebtRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'id' => ['nullable', 'string', 'max:36'],
             'shop_id' => ['nullable', 'integer', 'exists:shops,id'],
             'person_name' => ['required', 'string', 'max:255'],
             'direction' => ['nullable', 'string', 'in:receivable,payable'],

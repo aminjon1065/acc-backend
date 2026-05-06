@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Concerns\BelongsToShop;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,12 +12,17 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Expense extends Model
 {
     /** @use HasFactory<\Database\Factories\ExpenseFactory> */
-    use BelongsToShop, HasFactory, SoftDeletes;
+    use BelongsToShop, HasFactory, HasUuids, SoftDeletes;
+
+    public $incrementing = false;
+
+    protected $keyType = 'string';
 
     /**
      * @var list<string>
      */
     protected $fillable = [
+        'id',
         'shop_id',
         'user_id',
         'name',

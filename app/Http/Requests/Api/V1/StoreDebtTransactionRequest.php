@@ -23,6 +23,7 @@ class StoreDebtTransactionRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'id' => ['nullable', 'string', 'max:36'],
             'type' => ['required', 'string', Rule::in(['give', 'take', 'repay'])],
             'amount' => ['required', 'numeric', 'gt:0'],
             'note' => ['nullable', 'string'],

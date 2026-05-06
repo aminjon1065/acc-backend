@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Concerns\BelongsToShop;
 use App\Enums\PricingMode;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -13,12 +14,17 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Product extends Model
 {
     /** @use HasFactory<\Database\Factories\ProductFactory> */
-    use BelongsToShop, HasFactory, SoftDeletes;
+    use BelongsToShop, HasFactory, HasUuids, SoftDeletes;
+
+    public $incrementing = false;
+
+    protected $keyType = 'string';
 
     /**
      * @var list<string>
      */
     protected $fillable = [
+        'id',
         'shop_id',
         'created_by',
         'name',

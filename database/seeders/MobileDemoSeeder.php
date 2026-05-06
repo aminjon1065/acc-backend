@@ -574,7 +574,7 @@ class MobileDemoSeeder extends Seeder
             PurchaseItem::query()->create([
                 'shop_id' => $shopId,
                 'purchase_id' => $purchase->id,
-                'product_id' => (int) $item['product_id'],
+                'product_id' => $item['product_id'],
                 'quantity' => (float) $item['quantity'],
                 'price' => (float) $item['price'],
                 'total' => (float) $item['quantity'] * (float) $item['price'],
@@ -622,7 +622,7 @@ class MobileDemoSeeder extends Seeder
             SaleItem::query()->create([
                 'shop_id' => $shopId,
                 'sale_id' => $sale->id,
-                'product_id' => (int) $item['product_id'],
+                'product_id' => $item['product_id'],
                 'quantity' => (float) $item['quantity'],
                 'price' => (float) $item['price'],
                 'cost_price' => (float) $item['cost_price'],

@@ -97,6 +97,15 @@ class ExpenseController extends Controller
     {
         $this->authorize('delete', $expense);
 
+        $clientVersion = $request->integer('version');
+        if ($clientVersion && $expense->version !== $clientVersion) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Conflict: expense was modified by another client.',
+                'server_data' => new ExpenseResource($this->expenses->findForUser($request->user(), $expense->id)),
+            ], 409);
+        }
+
         $scoped = $this->expenses->findForUser($request->user(), $expense->id);
         $this->expenseService->deleteExpense($request->user(), $scoped);
 

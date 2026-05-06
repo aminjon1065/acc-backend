@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\DebtTransactionType;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,12 +11,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class DebtTransaction extends Model
 {
     /** @use HasFactory<\Database\Factories\DebtTransactionFactory> */
-    use HasFactory;
+    use HasFactory, HasUuids;
+
+    public $incrementing = false;
+
+    protected $keyType = 'string';
 
     /**
      * @var list<string>
      */
     protected $fillable = [
+        'id',
         'shop_id',
         'debt_id',
         'user_id',

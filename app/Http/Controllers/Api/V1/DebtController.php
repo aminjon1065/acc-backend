@@ -63,6 +63,7 @@ class DebtController extends Controller
             $request->validated('person_name'),
             $request->string('direction')->toString() ?: 'receivable',
             (float) $request->input('opening_balance', 0),
+            $request->validated('id') ?: null,
         );
 
         return new DebtResource($debt);
@@ -102,6 +103,7 @@ class DebtController extends Controller
             $request->validated('type'),
             (float) $request->validated('amount'),
             $request->input('note'),
+            $request->validated('id') ?: null,
         );
 
         return new DebtResource($updatedDebt);
@@ -138,6 +140,15 @@ class DebtController extends Controller
     public function destroy(Request $request, Debt $debt): JsonResponse
     {
         $this->authorize('delete', $debt);
+
+        $clientVersion = $request->integer('version');
+        if ($clientVersion && $debt->version !== $clientVersion) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Conflict: debt was modified by another client.',
+                'server_data' => new DebtResource($this->debts->findForUser($request->user(), $debt->id, ['transactions'])),
+            ], 409);
+        }
 
         $scopedDebt = $this->debts->findForUser($request->user(), $debt->id);
         $this->debtService->deleteDebt($scopedDebt, $request->user());

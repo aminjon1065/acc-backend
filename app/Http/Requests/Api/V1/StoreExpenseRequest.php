@@ -22,6 +22,7 @@ class StoreExpenseRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'id' => ['nullable', 'string', 'max:36'],
             'shop_id' => ['nullable', 'integer', 'exists:shops,id'],
             'name' => ['required', 'string', 'max:255'],
             'quantity' => ['required', 'numeric', 'gt:0'],
