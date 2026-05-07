@@ -23,6 +23,9 @@ class UpdateShopRequest extends FormRequest
     {
         return [
             'name' => ['sometimes', 'required', 'string', 'max:255'],
+            // Multi-shop ownership: super_admin reassigns the shop to a
+            // different owner via this field. Pass null to detach.
+            'owner_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
             'owner_name' => ['sometimes', 'nullable', 'string', 'max:255'],
             'phone' => ['sometimes', 'nullable', 'string', 'max:50'],
             'email' => ['sometimes', 'nullable', 'email', 'max:255'],

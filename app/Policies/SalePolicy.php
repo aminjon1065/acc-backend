@@ -42,7 +42,7 @@ class SalePolicy
             return true;
         }
 
-        return $user->role === UserRole::Owner && (int) $user->shop_id === (int) $sale->shop_id;
+        return $user->role === UserRole::Owner && $user->canAccessShop((int) $sale->shop_id);
     }
 
     public function delete(User $user, Sale $sale): bool
@@ -67,11 +67,11 @@ class SalePolicy
 
     private function isOperationalRole(User $user): bool
     {
-        return $user->isSuperAdmin() || $user->shop_id !== null;
+        return $user->hasAnyShop();
     }
 
     private function inSameShop(User $user, ?int $shopId): bool
     {
-        return $shopId !== null && (int) $user->shop_id === $shopId;
+        return $shopId !== null && $user->canAccessShop($shopId);
     }
 }

@@ -9,12 +9,12 @@ class ShopPolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->isSuperAdmin() || $user->shop_id !== null;
+        return $user->hasAnyShop();
     }
 
     public function view(User $user, Shop $shop): bool
     {
-        return $user->isSuperAdmin() || (int) $user->shop_id === (int) $shop->id;
+        return $user->canAccessShop((int) $shop->id);
     }
 
     public function create(User $user): bool

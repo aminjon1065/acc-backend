@@ -21,7 +21,9 @@ class ProductService
     public function createProduct(User $user, array $validated): Product
     {
         $validated = $this->normalizeImageUpload($validated);
-        $shopId = $user->isSuperAdmin() ? $validated['shop_id'] : $user->shop_id;
+        $shopId = $user->resolveShopIdForWrite(
+            isset($validated['shop_id']) ? (int) $validated['shop_id'] : null
+        );
         $imagePath = $this->storeImage($validated['image'] ?? null, $shopId);
         unset($validated['image']);
 

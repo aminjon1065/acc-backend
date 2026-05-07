@@ -19,9 +19,15 @@ class DebtRepository
         $query = Debt::query();
 
         if ($user->role === UserRole::Seller) {
+            // Sellers see only debts they personally created.
             $query->where('user_id', $user->id);
-        } elseif (! $user->isSuperAdmin()) {
-            $query->where('shop_id', $user->shop_id);
+
+            return $query;
+        }
+
+        $accessibleShopIds = $user->accessibleShopIds();
+        if ($accessibleShopIds !== null) {
+            $query->whereIn('shop_id', $accessibleShopIds);
         }
 
         return $query;

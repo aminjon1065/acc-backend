@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -18,12 +19,24 @@ class Shop extends Model
      */
     protected $fillable = [
         'name',
+        'owner_id',
         'owner_name',
         'phone',
         'email',
         'address',
         'status',
     ];
+
+    /**
+     * The owning user. NULL means the shop has been created but not yet
+     * assigned to an owner — admin assigns via `owner_id` on edit. The
+     * legacy `owner_name` text column stays for display when an owner
+     * record doesn't exist (historical data import path).
+     */
+    public function owner(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'owner_id');
+    }
 
     public function users(): HasMany
     {

@@ -23,6 +23,11 @@ class StoreShopRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
+            // Multi-shop ownership: super_admin sets `owner_id` on shop
+            // create/update to assign the shop to an owner user. Validated
+            // to exist and be a user with role=owner via the FK + check
+            // in the controller.
+            'owner_id' => ['nullable', 'integer', 'exists:users,id'],
             'owner_name' => ['nullable', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
             'email' => ['nullable', 'email', 'max:255'],

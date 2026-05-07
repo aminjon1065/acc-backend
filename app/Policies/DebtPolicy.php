@@ -77,11 +77,11 @@ class DebtPolicy
 
     private function isOperationalRole(User $user): bool
     {
-        return $user->isSuperAdmin() || $user->shop_id !== null;
+        return $user->hasAnyShop();
     }
 
     private function inSameShop(User $user, ?int $shopId): bool
     {
-        return $shopId !== null && (int) $user->shop_id === $shopId;
+        return $shopId !== null && $user->canAccessShop($shopId);
     }
 }

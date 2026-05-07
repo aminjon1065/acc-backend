@@ -27,8 +27,10 @@ class UserPolicy
                 return true;
             }
 
+            // Owner can act on sellers in any of their owned shops.
             return $model->role === UserRole::Seller
-                && (int) $user->shop_id === (int) $model->shop_id;
+                && $model->shop_id !== null
+                && $user->canAccessShop((int) $model->shop_id);
         }
 
         return false;
@@ -54,8 +56,10 @@ class UserPolicy
                 return true;
             }
 
+            // Owner can act on sellers in any of their owned shops.
             return $model->role === UserRole::Seller
-                && (int) $user->shop_id === (int) $model->shop_id;
+                && $model->shop_id !== null
+                && $user->canAccessShop((int) $model->shop_id);
         }
 
         return false;
@@ -73,7 +77,8 @@ class UserPolicy
 
         return $user->role === UserRole::Owner
             && $model->role === UserRole::Seller
-            && (int) $user->shop_id === (int) $model->shop_id;
+            && $model->shop_id !== null
+            && $user->canAccessShop((int) $model->shop_id);
     }
 
     public function restore(User $user, User $model): bool

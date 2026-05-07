@@ -2,6 +2,8 @@
 
 namespace Database\Factories;
 
+use App\Models\Shop;
+use App\Models\User;
 use App\UserRole;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -58,5 +60,30 @@ class UserFactory extends Factory
             'two_factor_recovery_codes' => encrypt(json_encode(['recovery-code-1'])),
             'two_factor_confirmed_at' => now(),
         ]);
+    }
+
+    /**
+     * Test ergonomics: callers historically create owners with
+     * `User::factory()->create(['shop_id' => $shop->id, 'role' => 'owner'])`
+     * and expect the user to "own" that shop. After the multi-shop owner
+     * model (shops.owner_id), that's no longer automatic — owners have
+     * shop_id=null and ownership lives on the shop side.
+     *
+     * configure() runs after `create()`. If a freshly-created user has
+     * role=owner AND shop_id set, we treat shop_id as a shorthand for
+     * "assign me to this shop" — set `shops.owner_id` and clear the
+     * user's shop_id. Tests using the legacy shape keep working without
+     * changes; new tests can either continue using the shorthand or
+     * explicitly set `Shop::owner_id` themselves.
+     */
+    public function configure(): static
+    {
+        return $this->afterCreating(function (User $user): void {
+            $isOwnerRole = ($user->role instanceof UserRole ? $user->role : UserRole::tryFrom((string) $user->role)) === UserRole::Owner;
+            if ($isOwnerRole && $user->shop_id !== null) {
+                Shop::query()->whereKey($user->shop_id)->update(['owner_id' => $user->id]);
+                $user->forceFill(['shop_id' => null])->save();
+            }
+        });
     }
 }

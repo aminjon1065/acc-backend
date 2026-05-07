@@ -7,9 +7,12 @@ use App\Http\Requests\Api\V1\StoreShopRequest;
 use App\Http\Requests\Api\V1\UpdateShopRequest;
 use App\Http\Resources\Api\V1\ShopResource;
 use App\Models\Shop;
+use App\Models\User;
+use App\UserRole;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Validation\ValidationException;
 
 class ShopController extends Controller
 {
@@ -22,8 +25,9 @@ class ShopController extends Controller
 
         $shops = Shop::query();
 
-        if (! $request->user()->isSuperAdmin()) {
-            $shops->whereKey($request->user()->shop_id);
+        $accessibleShopIds = $request->user()->accessibleShopIds();
+        if ($accessibleShopIds !== null) {
+            $shops->whereIn('id', $accessibleShopIds);
         }
 
         // Delta-sync support: clients pass updated_since to receive only
@@ -52,8 +56,11 @@ class ShopController extends Controller
     {
         $this->authorize('create', Shop::class);
 
+        $payload = $request->validated();
+        $this->assertOwnerIdIsValid($payload['owner_id'] ?? null);
+
         $shop = Shop::query()->create([
-            ...$request->validated(),
+            ...$payload,
             'status' => $request->input('status', 'active'),
         ]);
 
@@ -77,7 +84,12 @@ class ShopController extends Controller
     {
         $this->authorize('update', $shop);
 
-        $shop->fill($request->validated());
+        $payload = $request->validated();
+        if (array_key_exists('owner_id', $payload)) {
+            $this->assertOwnerIdIsValid($payload['owner_id']);
+        }
+
+        $shop->fill($payload);
         $shop->save();
 
         return new ShopResource($shop);
@@ -97,5 +109,25 @@ class ShopController extends Controller
             'message' => 'Shop deleted.',
             'data' => null,
         ]);
+    }
+
+    /**
+     * Validate that an owner_id assignment targets a user with the owner
+     * role. The FK + `exists:users,id` rule ensures the row exists; this
+     * extra step prevents accidentally turning a seller or another super
+     * admin into an "owner" via the shops endpoint.
+     */
+    private function assertOwnerIdIsValid(?int $ownerId): void
+    {
+        if ($ownerId === null) {
+            return;
+        }
+
+        $candidate = User::query()->find($ownerId);
+        if ($candidate === null || $candidate->role !== UserRole::Owner) {
+            throw ValidationException::withMessages([
+                'owner_id' => ['Selected user must have the owner role.'],
+            ]);
+        }
     }
 }

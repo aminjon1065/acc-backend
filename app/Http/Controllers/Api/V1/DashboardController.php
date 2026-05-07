@@ -19,7 +19,17 @@ class DashboardController extends Controller
     {
         $user = $request->user();
         $filters = $request->validated();
-        $shopId = $user->isSuperAdmin() ? ($filters['shop_id'] ?? null) : $user->shop_id;
+        // Owner / super_admin can pass an explicit `shop_id` filter to scope
+        // the dashboard to a single shop. Seller is forced to their assigned
+        // shop. Owner without an explicit filter sees an aggregate across
+        // all their owned shops; we encode that as `shopId = null` for the
+        // cache key (the service layer reads `accessibleShopIds` to compute
+        // the correct WHERE clause).
+        $shopId = match (true) {
+            $user->role === \App\UserRole::Seller => (int) $user->shop_id,
+            $user->isSuperAdmin(), $user->role === \App\UserRole::Owner => isset($filters['shop_id']) ? (int) $filters['shop_id'] : null,
+            default => null,
+        };
         $sellerId = $user->role === \App\UserRole::Seller ? (int) $user->id : null;
         $period = $filters['period'] ?? 'day';
         $dateFrom = $filters['date_from'] ?? '__null__';

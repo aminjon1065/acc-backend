@@ -18,8 +18,9 @@ class PurchaseRepository
     {
         $query = Purchase::query();
 
-        if (! $user->isSuperAdmin()) {
-            $query->where('shop_id', $user->shop_id);
+        $accessibleShopIds = $user->accessibleShopIds();
+        if ($accessibleShopIds !== null) {
+            $query->whereIn('shop_id', $accessibleShopIds);
         }
 
         return $query;
@@ -32,8 +33,9 @@ class PurchaseRepository
     {
         $query = Product::query()->where('shop_id', $shopId);
 
-        if (! $user->isSuperAdmin()) {
-            $query->where('shop_id', $user->shop_id);
+        $accessibleShopIds = $user->accessibleShopIds();
+        if ($accessibleShopIds !== null && ! in_array($shopId, $accessibleShopIds, true)) {
+            $query->whereRaw('1 = 0');
         }
 
         return $query;

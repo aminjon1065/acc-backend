@@ -21,9 +21,17 @@ class SaleRepository
         $query = Sale::query();
 
         if ($user->role === UserRole::Seller) {
+            // Sellers see only their own sales, regardless of which shop the
+            // sale was made in. The shop_id filter is implicit via user_id.
             $query->where('user_id', $user->id);
-        } elseif (! $user->isSuperAdmin()) {
-            $query->where('shop_id', $user->shop_id);
+
+            return $query;
+        }
+
+        $accessibleShopIds = $user->accessibleShopIds();
+        if ($accessibleShopIds !== null) {
+            // owner — scope to all owned shops.
+            $query->whereIn('shop_id', $accessibleShopIds);
         }
 
         return $query;
@@ -36,8 +44,13 @@ class SaleRepository
     {
         $query = Product::query()->where('shop_id', $shopId);
 
-        if (! $user->isSuperAdmin()) {
-            $query->where('shop_id', $user->shop_id);
+        $accessibleShopIds = $user->accessibleShopIds();
+        if ($accessibleShopIds !== null && ! in_array($shopId, $accessibleShopIds, true)) {
+            // The user explicitly asked for a shop they cannot access.
+            // Return an empty result set instead of leaking another shop's
+            // products. The policy layer is the primary enforcement, this
+            // is the second line of defence at the repository level.
+            $query->whereRaw('1 = 0');
         }
 
         return $query;

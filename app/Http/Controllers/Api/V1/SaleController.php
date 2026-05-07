@@ -12,7 +12,6 @@ use App\Repositories\Api\V1\SaleRepository;
 use App\Services\Api\V1\SaleService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Validation\ValidationException;
 
 class SaleController extends Controller
 {
@@ -48,15 +47,7 @@ class SaleController extends Controller
         $this->authorize('create', Sale::class);
 
         $actor = $request->user();
-        $shopId = $actor->isSuperAdmin()
-            ? $request->integer('shop_id')
-            : $actor->shop_id;
-
-        if ($actor->isSuperAdmin() && ! $shopId) {
-            throw ValidationException::withMessages([
-                'shop_id' => ['shop_id is required for super admin sale creation.'],
-            ]);
-        }
+        $shopId = $actor->resolveShopIdForWrite($request->integer('shop_id') ?: null);
 
         $sale = $this->saleService->createSale(
             $actor,

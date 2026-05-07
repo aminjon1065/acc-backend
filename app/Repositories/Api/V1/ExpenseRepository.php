@@ -17,8 +17,9 @@ class ExpenseRepository
     {
         $query = Expense::query();
 
-        if (! $user->isSuperAdmin()) {
-            $query->where('shop_id', $user->shop_id);
+        $accessibleShopIds = $user->accessibleShopIds();
+        if ($accessibleShopIds !== null) {
+            $query->whereIn('shop_id', $accessibleShopIds);
         }
 
         return $query;

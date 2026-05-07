@@ -40,21 +40,24 @@ test('auth endpoints write audit logs', function () {
         ->postJson('/api/v1/auth/logout')
         ->assertSuccessful();
 
+    // Auth events for owners aren't tied to a specific shop — owners can
+    // have many. Sellers (single shop) keep their shop_id in audit logs;
+    // owners log with shop_id=null because the event isn't shop-scoped.
     $this->assertDatabaseHas('audit_logs', [
         'user_id' => $user->id,
-        'shop_id' => $shop->id,
+        'shop_id' => null,
         'event' => 'auth.login',
     ]);
 
     $this->assertDatabaseHas('audit_logs', [
         'user_id' => $user->id,
-        'shop_id' => $shop->id,
+        'shop_id' => null,
         'event' => 'auth.refresh',
     ]);
 
     $this->assertDatabaseHas('audit_logs', [
         'user_id' => $user->id,
-        'shop_id' => $shop->id,
+        'shop_id' => null,
         'event' => 'auth.logout',
     ]);
 });

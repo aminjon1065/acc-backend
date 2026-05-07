@@ -27,14 +27,26 @@ class AuthController extends Controller
             ]);
         }
 
-        $user->loadMissing('shop');
+        // Suspended-shop check at login time. Mirrors EnsureActiveShop
+        // middleware: owners pass through if at least one of their shops
+        // is active; sellers / single-shop users gate on their primary
+        // shop's status.
+        if (! $user->isSuperAdmin()) {
+            if ($user->role === \App\UserRole::Owner) {
+                $hasActiveShop = $user->ownedShops()->where('status', 'active')->exists();
+                $shopActive = $hasActiveShop;
+            } else {
+                $user->loadMissing('shop');
+                $shopActive = $user->shop?->status === 'active';
+            }
 
-        if (! $user->isSuperAdmin() && $user->shop?->status !== 'active') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Shop is suspended.',
-                'errors' => [],
-            ], 403);
+            if (! $shopActive) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Shop is suspended.',
+                    'errors' => [],
+                ], 403);
+            }
         }
 
         // Enforce device limits: maximum 3 active sessions
@@ -68,6 +80,7 @@ class AuthController extends Controller
                     $user->only(['id', 'shop_id', 'name', 'email', 'role']),
                     [
                         'shop_name' => $user->shop?->name,
+                        'owned_shop_ids' => $user->owned_shop_ids,
                         'pin_reset_required' => $pinResetRequired,
                     ]
                 ),
@@ -87,6 +100,7 @@ class AuthController extends Controller
                 $user->only(['id', 'shop_id', 'name', 'email', 'role']),
                 [
                     'shop_name' => $user->shop?->name,
+                    'owned_shop_ids' => $user->owned_shop_ids,
                     'pin_reset_required' => (bool) $user->pin_reset_required,
                 ]
             ),

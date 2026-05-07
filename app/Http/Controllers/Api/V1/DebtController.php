@@ -14,7 +14,6 @@ use App\Services\Api\V1\DebtService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Validation\ValidationException;
 
 class DebtController extends Controller
 {
@@ -50,19 +49,11 @@ class DebtController extends Controller
         $this->authorize('create', Debt::class);
 
         $actor = $request->user();
-        $shopId = $actor->isSuperAdmin()
-            ? $request->integer('shop_id')
-            : $actor->shop_id;
-
-        if ($actor->isSuperAdmin() && ! $shopId) {
-            throw ValidationException::withMessages([
-                'shop_id' => ['shop_id is required for super admin debt creation.'],
-            ]);
-        }
+        $shopId = $actor->resolveShopIdForWrite($request->integer('shop_id') ?: null);
 
         $debt = $this->debtService->createDebt(
             $actor,
-            (int) $shopId,
+            $shopId,
             $request->validated('person_name'),
             $request->string('direction')->toString() ?: 'receivable',
             (float) $request->input('opening_balance', 0),

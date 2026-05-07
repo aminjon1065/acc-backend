@@ -22,17 +22,18 @@ class DashboardService
     public function build(User $user, array $filters): array
     {
         [$from, $to, $period] = $this->resolvePeriod($filters);
+        $shopIds = $this->resolveShopIdFilter($user, $filters);
         $shopId = $this->resolveShopId($user, $filters);
         $sellerId = $this->resolveSellerId($user);
 
-        $salesQuery = $this->scopeByShopAndPeriod(Sale::query(), $shopId, $from, $to);
-        $expensesQuery = $this->scopeByShopAndPeriod(Expense::query(), $shopId, $from, $to);
+        $salesQuery = $this->scopeByShopAndPeriod(Sale::query(), $shopIds, $from, $to);
+        $expensesQuery = $this->scopeByShopAndPeriod(Expense::query(), $shopIds, $from, $to);
         $productsQuery = Product::query();
         $debtsQuery = Debt::query()->where('balance', '>', 0);
 
-        if ($shopId !== null) {
-            $productsQuery->where('shop_id', $shopId);
-            $debtsQuery->where('shop_id', $shopId);
+        if ($shopIds !== null) {
+            $productsQuery->whereIn('shop_id', $shopIds);
+            $debtsQuery->whereIn('shop_id', $shopIds);
         }
 
         if ($sellerId !== null) {
@@ -48,8 +49,8 @@ class DashboardService
             ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
             ->whereBetween('sales.created_at', [$from, $to]);
 
-        if ($shopId !== null) {
-            $saleItemsQuery->where('sales.shop_id', $shopId);
+        if ($shopIds !== null) {
+            $saleItemsQuery->whereIn('sales.shop_id', $shopIds);
         }
 
         if ($sellerId !== null) {
@@ -96,7 +97,7 @@ class DashboardService
             'low_stock_count' => (int) ($productStats->low_stock_count ?? 0),
             'recent_sales' => $this->recentSales($salesQuery),
             'recent_expenses' => $this->recentExpenses($expensesQuery),
-            'recent_debt_transactions' => $this->recentDebtTransactions($shopId, $sellerId, $from, $to),
+            'recent_debt_transactions' => $this->recentDebtTransactions($shopIds, $sellerId, $from, $to),
             'low_stock_products' => $this->lowStockProducts($productsQuery),
             'unpaid_debts' => $this->unpaidDebts($debtsQuery),
         ];
@@ -131,19 +132,50 @@ class DashboardService
     }
 
     /**
+     * Backwards-compat shim: returns the single shop_id if the resolved
+     * scope is exactly one shop, otherwise null. Used for the cache key
+     * and any UI-facing fields that expect a scalar. The query scoping
+     * uses `resolveShopIdFilter` which returns the full array.
+     *
      * @param  array<string, mixed>  $filters
      */
     private function resolveShopId(User $user, array $filters): ?int
     {
-        if (! $user->isSuperAdmin()) {
-            return (int) $user->shop_id;
+        $ids = $this->resolveShopIdFilter($user, $filters);
+        if ($ids !== null && count($ids) === 1) {
+            return (int) $ids[0];
         }
 
-        if (! array_key_exists('shop_id', $filters) || $filters['shop_id'] === null) {
-            return null;
+        return null;
+    }
+
+    /**
+     * Shop scope to apply to every WHERE.
+     *
+     *   • null: super_admin with no explicit filter — query across all shops
+     *   • []  : explicit filter for a shop the user can't access (empty result)
+     *   • [N] : single-shop scope (specific filter, or seller's only shop)
+     *   • [N,M,...]: owner across all owned shops without explicit filter
+     *
+     * @param  array<string, mixed>  $filters
+     * @return list<int>|null
+     */
+    private function resolveShopIdFilter(User $user, array $filters): ?array
+    {
+        if (array_key_exists('shop_id', $filters) && $filters['shop_id'] !== null) {
+            $requested = (int) $filters['shop_id'];
+            $accessible = $user->accessibleShopIds();
+            if ($accessible !== null && ! in_array($requested, $accessible, true)) {
+                // User explicitly asked for a shop they can't see — return
+                // empty array so queries return no rows. Better than throwing
+                // because the dashboard is a read-only aggregation surface.
+                return [];
+            }
+
+            return [$requested];
         }
 
-        return (int) $filters['shop_id'];
+        return $user->accessibleShopIds();
     }
 
     private function resolveSellerId(User $user): ?int
@@ -159,12 +191,13 @@ class DashboardService
      * @template TModel of \Illuminate\Database\Eloquent\Model
      *
      * @param  Builder<TModel>  $query
+     * @param  list<int>|null  $shopIds  null = no shop filter (super_admin all)
      * @return Builder<TModel>
      */
-    private function scopeByShopAndPeriod(Builder $query, ?int $shopId, CarbonImmutable $from, CarbonImmutable $to): Builder
+    private function scopeByShopAndPeriod(Builder $query, ?array $shopIds, CarbonImmutable $from, CarbonImmutable $to): Builder
     {
-        if ($shopId !== null) {
-            $query->where('shop_id', $shopId);
+        if ($shopIds !== null) {
+            $query->whereIn('shop_id', $shopIds);
         }
 
         return $query->whereBetween('created_at', [$from, $to]);
@@ -216,13 +249,14 @@ class DashboardService
     }
 
     /**
+     * @param  list<int>|null  $shopIds
      * @return array<int, array<string, mixed>>
      */
-    private function recentDebtTransactions(?int $shopId, ?int $sellerId, CarbonImmutable $from, CarbonImmutable $to): array
+    private function recentDebtTransactions(?array $shopIds, ?int $sellerId, CarbonImmutable $from, CarbonImmutable $to): array
     {
         return DebtTransaction::query()
             ->with(['debt', 'user'])
-            ->when($shopId !== null, fn (Builder $query) => $query->where('shop_id', $shopId))
+            ->when($shopIds !== null, fn (Builder $query) => $query->whereIn('shop_id', $shopIds))
             ->when($sellerId !== null, fn (Builder $query) => $query->where('user_id', $sellerId))
             ->whereBetween('created_at', [$from, $to])
             ->latest('created_at')

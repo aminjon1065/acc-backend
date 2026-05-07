@@ -10,7 +10,6 @@ use App\Repositories\Api\V1\PurchaseRepository;
 use App\Services\Api\V1\PurchaseService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Validation\ValidationException;
 
 class PurchaseController extends Controller
 {
@@ -44,19 +43,11 @@ class PurchaseController extends Controller
         $this->authorize('create', Purchase::class);
 
         $actor = $request->user();
-        $shopId = $actor->isSuperAdmin()
-            ? $request->integer('shop_id')
-            : $actor->shop_id;
-
-        if ($actor->isSuperAdmin() && ! $shopId) {
-            throw ValidationException::withMessages([
-                'shop_id' => ['shop_id is required for super admin purchase creation.'],
-            ]);
-        }
+        $shopId = $actor->resolveShopIdForWrite($request->integer('shop_id') ?: null);
 
         $purchase = $this->purchaseService->createPurchase(
             $actor,
-            (int) $shopId,
+            $shopId,
             $request->input('supplier_name'),
             $request->validated('items'),
         );

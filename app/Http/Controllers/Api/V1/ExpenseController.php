@@ -13,7 +13,6 @@ use App\Services\Api\V1\ExpenseService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Validation\ValidationException;
 
 class ExpenseController extends Controller
 {
@@ -44,17 +43,9 @@ class ExpenseController extends Controller
         $this->authorize('create', Expense::class);
 
         $actor = $request->user();
-        $shopId = $actor->isSuperAdmin()
-            ? $request->integer('shop_id')
-            : $actor->shop_id;
+        $shopId = $actor->resolveShopIdForWrite($request->integer('shop_id') ?: null);
 
-        if ($actor->isSuperAdmin() && ! $shopId) {
-            throw ValidationException::withMessages([
-                'shop_id' => ['shop_id is required for super admin expense creation.'],
-            ]);
-        }
-
-        $expense = $this->expenseService->createExpense($actor, (int) $shopId, $request->validated());
+        $expense = $this->expenseService->createExpense($actor, $shopId, $request->validated());
 
         return new ExpenseResource($expense);
     }

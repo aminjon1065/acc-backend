@@ -27,12 +27,16 @@ trait BelongsToShop
                 return;
             }
 
-            // Super admins can access all shops
-            if ($user->isSuperAdmin()) {
-                return;
+            // accessibleShopIds() returns null for super_admin (no scope),
+            // an array of one (seller / owner-with-one-shop), or many
+            // (owner-with-multiple-shops). The whereIn handles all three.
+            $accessible = $user->accessibleShopIds();
+            if ($accessible !== null) {
+                $builder->whereIn(
+                    $builder->getModel()->getTable().'.shop_id',
+                    $accessible
+                );
             }
-
-            $builder->where($builder->getModel()->getTable() . '.shop_id', $user->shop_id);
         });
     }
 

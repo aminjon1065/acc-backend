@@ -48,13 +48,21 @@ class ProductController extends Controller
             return ProductResource::collection($products);
         }
 
-        $scopeShopId = $request->user()->isSuperAdmin()
-            ? ($request->filled('shop_id') ? $request->integer('shop_id') : null)
-            : (int) $request->user()->shop_id;
+        // Resolve scope key for cache. Owner / seller queries are
+        // identity-bound (different owners with different owned-shop sets
+        // must never share a cache slot), so encode user_id when there's
+        // no explicit shop filter.
+        $user = $request->user();
+        $scopeKey = match (true) {
+            $user->isSuperAdmin() => $request->filled('shop_id') ? 'shop_'.$request->integer('shop_id') : 'all',
+            $request->filled('shop_id') => 'shop_'.$request->integer('shop_id'),
+            default => 'user_'.$user->id,
+        };
+        $scopeShopId = $request->filled('shop_id') ? $request->integer('shop_id') : null;
         $version = $this->productCatalogCache->versionForShop($scopeShopId);
         $cacheKey = sprintf(
             'products:index:scope_%s:v%d:%s',
-            $scopeShopId ?? 'all',
+            $scopeKey,
             $version,
             md5(json_encode([
                 'page' => $request->integer('page', 1),
@@ -92,7 +100,9 @@ class ProductController extends Controller
     {
         $this->authorize('view', $product);
 
-        $scopeShopId = $request->user()->isSuperAdmin() ? $product->shop_id : (int) $request->user()->shop_id;
+        // Cache key follows the product's shop — owner / seller can only
+        // reach this endpoint via policy if they can access that shop.
+        $scopeShopId = (int) $product->shop_id;
         $version = $this->productCatalogCache->versionForShop($scopeShopId);
         $cacheKey = "products:show:shop_{$scopeShopId}:product_{$product->id}:v{$version}";
 

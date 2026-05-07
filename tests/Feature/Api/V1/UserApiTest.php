@@ -28,9 +28,12 @@ test('owner can list and create users only in own shop', function () {
         ->assertSuccessful()
         ->assertJsonCount(2, 'data');
 
+    // Owner can create sellers in their own shop. Passing a foreign
+    // shop_id is rejected — the old "silent coerce to actor->shop_id"
+    // behavior was masking misconfigured clients.
     $this->actingAs($owner, 'sanctum')
         ->postJson('/api/v1/users', [
-            'shop_id' => $shopB->id,
+            'shop_id' => $shopA->id,
             'name' => 'Seller A',
             'email' => 'seller-a@example.com',
             'password' => 'password123',
@@ -39,6 +42,18 @@ test('owner can list and create users only in own shop', function () {
         ->assertCreated()
         ->assertJsonPath('data.shop_id', $shopA->id)
         ->assertJsonPath('data.role', UserRole::Seller->value);
+
+    // Foreign shop_id is rejected with a validation error.
+    $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/users', [
+            'shop_id' => $shopB->id,
+            'name' => 'Seller B',
+            'email' => 'seller-b@example.com',
+            'password' => 'password123',
+            'role' => UserRole::Seller->value,
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['shop_id']);
 });
 
 test('owner cannot create super admin user', function () {
@@ -114,8 +129,13 @@ test('owner user listing includes self and sellers only', function () {
         'shop_id' => $shop->id,
         'role' => UserRole::Seller->value,
     ]);
+    // Multi-shop ownership: each shop has at most one owner. To verify
+    // that owners DON'T see other owners, create a second owner with
+    // their own shop — the listing for the first owner must still only
+    // contain themselves + their own seller.
+    $otherShop = Shop::factory()->create();
     User::factory()->create([
-        'shop_id' => $shop->id,
+        'shop_id' => $otherShop->id,
         'role' => UserRole::Owner->value,
     ]);
 
@@ -155,13 +175,27 @@ test('super admin can create user in specific shop and filter list', function ()
         'role' => UserRole::SuperAdmin->value,
     ]);
 
-    $this->actingAs($admin, 'sanctum')
+    // Owners are created without `shop_id` — ownership is assigned via
+    // `shops.owner_id` (PATCH /api/v1/shops/{id} with `owner_id`).
+    $owner = $this->actingAs($admin, 'sanctum')
         ->postJson('/api/v1/users', [
-            'shop_id' => $shopA->id,
             'name' => 'Owner A',
             'email' => 'owner-a@example.com',
             'password' => 'password123',
             'role' => UserRole::Owner->value,
+        ])
+        ->assertCreated()
+        ->assertJsonPath('data.shop_id', null)
+        ->json('data');
+
+    // Sellers are created with an explicit shop_id.
+    $this->actingAs($admin, 'sanctum')
+        ->postJson('/api/v1/users', [
+            'shop_id' => $shopA->id,
+            'name' => 'Seller A',
+            'email' => 'seller-a@example.com',
+            'password' => 'password123',
+            'role' => UserRole::Seller->value,
         ])
         ->assertCreated()
         ->assertJsonPath('data.shop_id', $shopA->id);
@@ -171,6 +205,7 @@ test('super admin can create user in specific shop and filter list', function ()
         'role' => UserRole::Seller->value,
     ]);
 
+    // Filter list to shop A — should only return Seller A.
     $this->actingAs($admin, 'sanctum')
         ->getJson('/api/v1/users?shop_id='.$shopA->id)
         ->assertSuccessful()

@@ -17,9 +17,12 @@ class ProductRepository
     {
         $query = Product::query();
 
-        if (! $user->isSuperAdmin()) {
-            $query->where('shop_id', $user->shop_id);
+        $accessibleShopIds = $user->accessibleShopIds();
+        if ($accessibleShopIds !== null) {
+            // owner / seller — server-enforced scope, request `shop_id` is ignored.
+            $query->whereIn('shop_id', $accessibleShopIds);
         } elseif ($request !== null && $request->filled('shop_id')) {
+            // super_admin can narrow to a specific shop on demand.
             $query->where('shop_id', $request->integer('shop_id'));
         }
 

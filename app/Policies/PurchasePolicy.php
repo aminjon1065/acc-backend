@@ -29,7 +29,7 @@ class PurchasePolicy
             return true;
         }
 
-        return $user->role === UserRole::Owner && (int) $user->shop_id === (int) $purchase->shop_id;
+        return $user->role === UserRole::Owner && $user->canAccessShop((int) $purchase->shop_id);
     }
 
     public function delete(User $user, Purchase $purchase): bool
@@ -38,7 +38,7 @@ class PurchasePolicy
             return true;
         }
 
-        return $user->role === UserRole::Owner && (int) $user->shop_id === (int) $purchase->shop_id;
+        return $user->role === UserRole::Owner && $user->canAccessShop((int) $purchase->shop_id);
     }
 
     public function restore(User $user, Purchase $purchase): bool
@@ -53,7 +53,7 @@ class PurchasePolicy
 
     private function isOperationalRole(User $user): bool
     {
-        return $user->isSuperAdmin() || $user->shop_id !== null;
+        return $user->hasAnyShop();
     }
 
     private function isOwnerOrAdmin(User $user): bool
@@ -63,6 +63,6 @@ class PurchasePolicy
 
     private function inSameShop(User $user, ?int $shopId): bool
     {
-        return $shopId !== null && (int) $user->shop_id === $shopId;
+        return $shopId !== null && $user->canAccessShop($shopId);
     }
 }

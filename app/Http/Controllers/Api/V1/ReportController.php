@@ -23,7 +23,13 @@ class ReportController extends Controller
     public function sales(Request $request): JsonResponse
     {
         $user = $request->user();
-        $shopId = $user->isSuperAdmin() ? 'sa_'.($request->shop_id ?? 'all') : $user->shop_id;
+        // Cache key must distinguish per-user scope: owners with different
+        // owned-shop sets must NOT share cache slots even when both query
+        // without an explicit shop_id. Encoding user_id alongside the
+        // resolved shop scope guarantees that.
+        $shopId = $user->isSuperAdmin()
+            ? 'sa_'.($request->shop_id ?? 'all')
+            : 'user_'.$user->id.($request->filled('shop_id') ? '_shop_'.$request->integer('shop_id') : '');
         $version = $this->cacheVersion->versionForShop(is_int($shopId) ? $shopId : null);
         $cacheKey = "reports:sales:shop_{$shopId}:v{$version}:from_{$request->date_from}:to_{$request->date_to}";
 
@@ -78,7 +84,13 @@ class ReportController extends Controller
     public function expenses(Request $request): JsonResponse
     {
         $user = $request->user();
-        $shopId = $user->isSuperAdmin() ? 'sa_'.($request->shop_id ?? 'all') : $user->shop_id;
+        // Cache key must distinguish per-user scope: owners with different
+        // owned-shop sets must NOT share cache slots even when both query
+        // without an explicit shop_id. Encoding user_id alongside the
+        // resolved shop scope guarantees that.
+        $shopId = $user->isSuperAdmin()
+            ? 'sa_'.($request->shop_id ?? 'all')
+            : 'user_'.$user->id.($request->filled('shop_id') ? '_shop_'.$request->integer('shop_id') : '');
         $version = $this->cacheVersion->versionForShop(is_int($shopId) ? $shopId : null);
         $cacheKey = "reports:expenses:shop_{$shopId}:v{$version}:from_{$request->date_from}:to_{$request->date_to}";
 
@@ -121,7 +133,13 @@ class ReportController extends Controller
     public function profit(Request $request): JsonResponse
     {
         $user = $request->user();
-        $shopId = $user->isSuperAdmin() ? 'sa_'.($request->shop_id ?? 'all') : $user->shop_id;
+        // Cache key must distinguish per-user scope: owners with different
+        // owned-shop sets must NOT share cache slots even when both query
+        // without an explicit shop_id. Encoding user_id alongside the
+        // resolved shop scope guarantees that.
+        $shopId = $user->isSuperAdmin()
+            ? 'sa_'.($request->shop_id ?? 'all')
+            : 'user_'.$user->id.($request->filled('shop_id') ? '_shop_'.$request->integer('shop_id') : '');
         $version = $this->cacheVersion->versionForShop(is_int($shopId) ? $shopId : null);
         $cacheKey = "reports:profit:shop_{$shopId}:v{$version}:from_{$request->date_from}:to_{$request->date_to}";
 
@@ -160,7 +178,13 @@ class ReportController extends Controller
     public function stock(Request $request): JsonResponse
     {
         $user = $request->user();
-        $shopId = $user->isSuperAdmin() ? 'sa_'.($request->shop_id ?? 'all') : $user->shop_id;
+        // Cache key must distinguish per-user scope: owners with different
+        // owned-shop sets must NOT share cache slots even when both query
+        // without an explicit shop_id. Encoding user_id alongside the
+        // resolved shop scope guarantees that.
+        $shopId = $user->isSuperAdmin()
+            ? 'sa_'.($request->shop_id ?? 'all')
+            : 'user_'.$user->id.($request->filled('shop_id') ? '_shop_'.$request->integer('shop_id') : '');
         $version = $this->cacheVersion->versionForShop(is_int($shopId) ? $shopId : null);
         $cacheKey = "reports:stock:v{$version}:shop_{$shopId}";
 
@@ -279,15 +303,26 @@ class ReportController extends Controller
     private function applyShopScope(Builder $query, User $user, Request $request, string $table = ''): void
     {
         $column = ($table !== '' ? $table.'.' : '').'shop_id';
+        $accessibleShopIds = $user->accessibleShopIds();
 
-        if (! $user->isSuperAdmin()) {
-            $query->where($column, $user->shop_id);
+        // Explicit `shop_id` filter from the request — but only honored if
+        // the user can actually see that shop. For owner/seller a
+        // non-accessible shop_id collapses to "no rows" (empty whereIn).
+        if ($request->filled('shop_id')) {
+            $requested = $request->integer('shop_id');
+            if ($accessibleShopIds === null || in_array($requested, $accessibleShopIds, true)) {
+                $query->where($column, $requested);
+
+                return;
+            }
+            $query->whereRaw('1 = 0');
 
             return;
         }
 
-        if ($request->filled('shop_id')) {
-            $query->where($column, $request->integer('shop_id'));
+        // No explicit filter — fall back to the user's accessible scope.
+        if ($accessibleShopIds !== null) {
+            $query->whereIn($column, $accessibleShopIds);
         }
     }
 }

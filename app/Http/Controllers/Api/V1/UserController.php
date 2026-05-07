@@ -27,20 +27,23 @@ class UserController extends Controller
 
         $users = User::query();
 
-        if (! $actor->isSuperAdmin()) {
-            $users->where('shop_id', $actor->shop_id);
-
-            if ($actor->role === UserRole::Owner) {
-                $users->where(function ($query) use ($actor): void {
-                    $query
-                        ->where('id', $actor->id)
-                        ->orWhere('role', UserRole::Seller->value);
-                });
-            } elseif ($actor->role === UserRole::Seller) {
-                $users->whereKey($actor->id);
+        if ($actor->isSuperAdmin()) {
+            if ($request->filled('shop_id')) {
+                $users->where('shop_id', $request->integer('shop_id'));
             }
-        } elseif ($request->filled('shop_id')) {
-            $users->where('shop_id', $request->integer('shop_id'));
+        } elseif ($actor->role === UserRole::Owner) {
+            // Owner sees themselves + sellers across every shop they own.
+            $ownedIds = $actor->owned_shop_ids;
+            $users->where(function ($query) use ($actor, $ownedIds): void {
+                $query
+                    ->where('id', $actor->id)
+                    ->orWhere(function ($q) use ($ownedIds): void {
+                        $q->where('role', UserRole::Seller->value)
+                            ->whereIn('shop_id', $ownedIds);
+                    });
+            });
+        } elseif ($actor->role === UserRole::Seller) {
+            $users->whereKey($actor->id);
         }
 
         return UserResource::collection(
@@ -57,27 +60,38 @@ class UserController extends Controller
 
         $actor = $request->user();
         $data = $request->validated();
+        $role = $data['role'] ?? null;
 
         if ($actor->role === UserRole::Owner) {
-            if (($data['role'] ?? null) !== UserRole::Seller->value) {
-                abort(403);
+            // Owners can only create sellers, and only inside their own shops.
+            // resolveShopIdForWrite handles the "owner with one shop = implicit"
+            // and "owner with many shops = required" cases uniformly.
+            if ($role !== UserRole::Seller->value) {
+                abort(403, 'Owners can only create sellers.');
             }
-
-            $data['shop_id'] = $actor->shop_id;
-        } elseif (! $actor->isSuperAdmin()) {
-            if (($data['role'] ?? null) === UserRole::SuperAdmin->value) {
-                abort(403);
+            $data['shop_id'] = $actor->resolveShopIdForWrite(
+                isset($data['shop_id']) ? (int) $data['shop_id'] : null
+            );
+        } elseif ($actor->isSuperAdmin()) {
+            // super_admin: explicit role/shop_id rules
+            //   • super_admin role → shop_id forced to null
+            //   • owner role       → shop_id null (owners use shops.owner_id)
+            //   • seller role      → shop_id required and must exist
+            if ($role === UserRole::SuperAdmin->value) {
+                $data['shop_id'] = null;
+            } elseif ($role === UserRole::Owner->value) {
+                $data['shop_id'] = null;
+            } elseif ($role === UserRole::Seller->value) {
+                if (empty($data['shop_id'])) {
+                    throw ValidationException::withMessages([
+                        'shop_id' => ['shop_id is required when creating a seller.'],
+                    ]);
+                }
             }
-
-            $data['shop_id'] = $actor->shop_id;
-        } elseif (($data['role'] ?? null) !== UserRole::SuperAdmin->value && empty($data['shop_id'])) {
-            throw ValidationException::withMessages([
-                'shop_id' => ['shop_id is required for non-super-admin users.'],
-            ]);
-        }
-
-        if (($data['role'] ?? null) === UserRole::SuperAdmin->value) {
-            $data['shop_id'] = null;
+        } else {
+            // Sellers cannot create users (caught by viewAny / create policy
+            // already; this is defense in depth).
+            abort(403);
         }
 
         $user = User::query()->create([
@@ -113,24 +127,28 @@ class UserController extends Controller
             unset($data['role'], $data['shop_id']);
         } elseif ($actor->role === UserRole::Owner) {
             if ($actor->id === $user->id) {
+                // Owner editing self — role/shop_id are not user-editable.
                 unset($data['role'], $data['shop_id']);
             } else {
+                // Owner editing one of their sellers. Role can't change away
+                // from seller. shop_id may change but only between the
+                // owner's own shops.
                 if (($data['role'] ?? UserRole::Seller->value) !== UserRole::Seller->value) {
                     abort(403);
                 }
-
                 $data['role'] = UserRole::Seller->value;
-                $data['shop_id'] = $actor->shop_id;
+                if (array_key_exists('shop_id', $data)) {
+                    $shopId = $data['shop_id'] !== null ? (int) $data['shop_id'] : null;
+                    if ($shopId === null || ! $actor->canAccessShop($shopId)) {
+                        throw ValidationException::withMessages([
+                            'shop_id' => ['shop_id must be one of your shops.'],
+                        ]);
+                    }
+                    $data['shop_id'] = $shopId;
+                }
             }
         }
-
-        if (! $actor->isSuperAdmin()) {
-            if (($data['role'] ?? null) === UserRole::SuperAdmin->value) {
-                abort(403);
-            }
-
-            $data['shop_id'] = $actor->shop_id;
-        }
+        // super_admin: no extra coercion — request data stands as validated.
 
         if (array_key_exists('password', $data)) {
             $data['password'] = Hash::make($data['password']);

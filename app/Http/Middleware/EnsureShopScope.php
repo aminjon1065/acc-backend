@@ -35,21 +35,28 @@ class EnsureShopScope
             }
 
             if ($parameter instanceof Shop) {
-                abort_if((int) $actor->shop_id !== (int) $parameter->getKey(), 404);
+                abort_unless($actor->canAccessShop((int) $parameter->getKey()), 404);
 
                 continue;
             }
 
             if ($parameter instanceof User) {
-                abort_if((int) $parameter->shop_id !== (int) $actor->shop_id, 404);
                 abort_if($parameter->isSuperAdmin(), 403);
+                $targetShopId = $parameter->shop_id !== null ? (int) $parameter->shop_id : null;
+                // Sellers must belong to a shop the actor can access.
+                // Owners can edit themselves (User policy handles that, this
+                // middleware just guards the URL parameter).
+                abort_if(
+                    $targetShopId !== null && ! $actor->canAccessShop($targetShopId),
+                    404
+                );
 
                 continue;
             }
 
             $shopId = $parameter->getAttribute('shop_id');
 
-            if ($shopId !== null && (int) $shopId !== (int) $actor->shop_id) {
+            if ($shopId !== null && ! $actor->canAccessShop((int) $shopId)) {
                 abort(404);
             }
         }

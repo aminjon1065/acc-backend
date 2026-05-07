@@ -19,6 +19,10 @@ class UserResource extends JsonResource
         return [
             'id' => $this->id,
             'shop_id' => $this->shop_id,
+            // Multi-shop ownership: list of shop IDs this user owns. Always
+            // present (empty array for non-owners) so the mobile client can
+            // unconditionally read it without a null guard.
+            'owned_shop_ids' => $this->resource->owned_shop_ids,
             'name' => $this->name,
             'email' => $this->email,
             'role' => $role instanceof \BackedEnum ? $role->value : $role,

@@ -23,7 +23,9 @@ test('mobile user can login and receive token', function () {
         ->assertOk()
         ->assertJsonPath('success', true)
         ->assertJsonPath('data.user.id', $user->id)
-        ->assertJsonPath('data.user.shop_id', $shop->id)
+        // Owners no longer carry shop_id directly — ownership lives on
+        // shops.owner_id and surfaces here as `owned_shop_ids`.
+        ->assertJsonPath('data.user.owned_shop_ids', [$shop->id])
         ->assertJsonStructure([
             'success',
             'message',

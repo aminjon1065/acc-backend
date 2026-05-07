@@ -54,15 +54,27 @@ class ShopSettingController extends Controller
     {
         $user = $request->user();
 
-        if (! $user->isSuperAdmin()) {
-            return (int) $user->shop_id;
+        // Owner / super_admin can pick any shop they have access to via the
+        // request `shop_id` parameter — required for owners with multiple
+        // shops since there's no implicit single shop. Sellers always
+        // resolve to their assigned `user.shop_id`.
+        $accessibleShopIds = $user->accessibleShopIds();
+
+        if ($accessibleShopIds !== null && count($accessibleShopIds) === 1) {
+            // Single accessible shop: seller, or owner with only one shop.
+            return (int) $accessibleShopIds[0];
         }
 
         $shopId = $request->integer('shop_id');
-
         if (! $shopId) {
             throw ValidationException::withMessages([
-                'shop_id' => ['shop_id is required for super admin settings access.'],
+                'shop_id' => ['shop_id is required.'],
+            ]);
+        }
+
+        if ($accessibleShopIds !== null && ! in_array($shopId, $accessibleShopIds, true)) {
+            throw ValidationException::withMessages([
+                'shop_id' => ['You do not have access to that shop.'],
             ]);
         }
 
