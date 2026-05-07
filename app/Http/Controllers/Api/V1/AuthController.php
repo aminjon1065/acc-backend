@@ -27,14 +27,19 @@ class AuthController extends Controller
             ]);
         }
 
-        // Suspended-shop check at login time. Mirrors EnsureActiveShop
-        // middleware: owners pass through if at least one of their shops
-        // is active; sellers / single-shop users gate on their primary
-        // shop's status.
+        // Suspended-shop check at login time. Four states:
+        //   • super_admin           — always allowed (no shop scope).
+        //   • owner with 0 shops    — allowed; the mobile client renders
+        //                             NoShopsAssignedScreen until an admin
+        //                             assigns a shop. NOT a suspension.
+        //   • owner with shops      — at least one must be active.
+        //   • seller / single-shop  — their assigned shop must be active.
         if (! $user->isSuperAdmin()) {
             if ($user->role === \App\UserRole::Owner) {
-                $hasActiveShop = $user->ownedShops()->where('status', 'active')->exists();
-                $shopActive = $hasActiveShop;
+                $totalShops = $user->ownedShops()->count();
+                $shopActive = $totalShops === 0
+                    ? true
+                    : $user->ownedShops()->where('status', 'active')->exists();
             } else {
                 $user->loadMissing('shop');
                 $shopActive = $user->shop?->status === 'active';

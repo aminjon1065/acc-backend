@@ -22,11 +22,20 @@ class EnsureActiveShop
             return $next($request);
         }
 
-        // Multi-shop ownership: owners are blocked only when EVERY shop
-        // they own is suspended. Per-shop checks happen at the policy /
-        // repository layer so the owner can still operate on whichever
-        // shop is active. Sellers (single shop) keep the original check.
+        // Multi-shop ownership.
+        //   • 0 shops  → pass through. The mobile client gates the user
+        //                with NoShopsAssignedScreen; this is not a
+        //                suspension and shouldn't block API access.
+        //   • >=1 shop → at least one must be active. Per-shop checks
+        //                happen at the policy / repository layer so the
+        //                owner can still operate on whichever shop is
+        //                active.
+        // Sellers (single shop) keep the original check below.
         if ($user->role === \App\UserRole::Owner) {
+            $totalShops = $user->ownedShops()->count();
+            if ($totalShops === 0) {
+                return $next($request);
+            }
             $hasActiveShop = $user->ownedShops()->where('status', 'active')->exists();
             if (! $hasActiveShop) {
                 return new JsonResponse([

@@ -17,6 +17,10 @@ class ShopResource extends JsonResource
         return [
             'id' => $this->id,
             'name' => $this->name,
+            // Multi-shop ownership: which user owns this shop. Null when
+            // unassigned. Mobile clients use this to populate the "Владелец"
+            // edit dropdown and decide whether the shop is reachable.
+            'owner_id' => $this->owner_id,
             'owner_name' => $this->owner_name,
             'phone' => $this->phone,
             'email' => $this->email,
