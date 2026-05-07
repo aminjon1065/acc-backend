@@ -14,6 +14,47 @@ services:
       - postgres
       - redis
 
+  # Queue worker. Reuses the app image and bind-mounts the same code so it
+  # picks up deployed updates. `--max-time=3600` rotates the worker hourly
+  # to flush any leaked memory; `--tries=3 --backoff=60` retries each job
+  # three times with a one-minute pause before declaring it failed.
+  # PushNotification (the only ShouldQueue job today) lives in this lane.
+  queue:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ck-accounting-queue
+    restart: unless-stopped
+    working_dir: /var/www/html
+    env_file:
+      - .env
+    volumes:
+      - ./:/var/www/html
+    command: php artisan queue:work --tries=3 --backoff=60 --timeout=300 --max-time=3600 --sleep=3
+    depends_on:
+      - postgres
+      - redis
+
+  # Long-running scheduler. Replaces the cron entry that would call
+  # `php artisan schedule:run` every minute — in a container, `schedule:work`
+  # is the supported pattern. Runs the daily DB backup configured in
+  # routes/console.php.
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ck-accounting-scheduler
+    restart: unless-stopped
+    working_dir: /var/www/html
+    env_file:
+      - .env
+    volumes:
+      - ./:/var/www/html
+    command: php artisan schedule:work
+    depends_on:
+      - postgres
+      - redis
+
   nginx:
     image: nginx:1.27
     container_name: ck-accounting-nginx

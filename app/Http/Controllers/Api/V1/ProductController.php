@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Concerns\EnforcesEntityVersion;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\StoreProductRequest;
 use App\Http\Requests\Api\V1\UpdateProductRequest;
@@ -20,6 +21,8 @@ use Illuminate\Support\Facades\Cache;
 
 class ProductController extends Controller
 {
+    use EnforcesEntityVersion;
+
     public function __construct(
         private readonly ProductRepository $products,
         private readonly ProductService $productService,
@@ -105,14 +108,12 @@ class ProductController extends Controller
     {
         $this->authorize('update', $product);
 
-        $clientVersion = $request->integer('version');
-        if ($clientVersion && $product->version !== $clientVersion) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Conflict: product was modified by another client.',
-                'server_data' => new ProductResource($this->products->findForUser($request->user(), $product->id)),
-            ], 409)->throwResponse();
-        }
+        $this->enforceVersionMatch(
+            $request,
+            $product,
+            fn () => new ProductResource($this->products->findForUser($request->user(), $product->id)),
+            'product',
+        );
 
         $scoped = $this->products->findForUser($request->user(), $product->id);
         $updated = $this->productService->updateProduct($scoped, $request->validated());
@@ -127,14 +128,12 @@ class ProductController extends Controller
     {
         $this->authorize('delete', $product);
 
-        $clientVersion = $request->integer('version');
-        if ($clientVersion && $product->version !== $clientVersion) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Conflict: product was modified by another client.',
-                'server_data' => new ProductResource($this->products->findForUser($request->user(), $product->id)),
-            ], 409);
-        }
+        $this->enforceVersionMatch(
+            $request,
+            $product,
+            fn () => new ProductResource($this->products->findForUser($request->user(), $product->id)),
+            'product',
+        );
 
         $scoped = $this->products->findForUser($request->user(), $product->id);
         $this->productService->deleteProduct($scoped);

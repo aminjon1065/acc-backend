@@ -119,16 +119,22 @@ class DebtService
 
     public function deleteDebt(Debt $debt, User $actor): void
     {
-        $shopId = (int) $debt->shop_id;
+        DB::transaction(function () use ($debt, $actor): void {
+            $shopId = (int) $debt->shop_id;
 
-        $debt->transactions()->delete();
-        $debt->delete();
+            // Delete dependent transactions first, then the parent. Wrapping
+            // both in one DB transaction means a crash mid-cleanup can't
+            // leave orphan debt_transactions referencing a deleted parent
+            // (or an undeleted parent with zero transactions reachable).
+            $debt->transactions()->delete();
+            $debt->delete();
 
-        $this->auditLogger->log('debts.deleted', $actor, $debt, [
-            'person_name' => $debt->person_name,
-            'balance' => (float) $debt->balance,
-        ], $shopId);
+            $this->auditLogger->log('debts.deleted', $actor, $debt, [
+                'person_name' => $debt->person_name,
+                'balance' => (float) $debt->balance,
+            ], $shopId);
 
-        $this->dashboardCacheVersion->bumpShop($shopId);
+            $this->dashboardCacheVersion->bumpShop($shopId);
+        });
     }
 }

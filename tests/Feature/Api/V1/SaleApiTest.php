@@ -50,9 +50,14 @@ test('sale fails when product stock is insufficient', function () {
         'shop_id' => $shop->id,
         'role' => UserRole::Owner->value,
     ]);
+    // Pin cost_price so the validator's price-below-cost rule doesn't fire
+    // first (default ProductFactory randomizes cost in 1..300). The test
+    // targets the stock-check path.
     $product = Product::factory()->create([
         'shop_id' => $shop->id,
         'stock_quantity' => 1,
+        'cost_price' => 5,
+        'sale_price' => 10,
     ]);
 
     $this->actingAs($owner, 'sanctum')

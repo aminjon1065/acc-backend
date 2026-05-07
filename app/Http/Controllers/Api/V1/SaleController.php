@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Concerns\EnforcesEntityVersion;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\ReturnSaleRequest;
 use App\Http\Requests\Api\V1\StoreSaleRequest;
@@ -15,6 +16,8 @@ use Illuminate\Validation\ValidationException;
 
 class SaleController extends Controller
 {
+    use EnforcesEntityVersion;
+
     public function __construct(
         private readonly SaleRepository $sales,
         private readonly SaleService $saleService,
@@ -89,16 +92,12 @@ class SaleController extends Controller
     {
         $this->authorize('update', $sale);
 
-        if ($request->has('version')) {
-            $clientVersion = $request->integer('version');
-            if ($sale->version !== $clientVersion) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Conflict: sale was modified by another client.',
-                    'server_data' => new SaleResource($this->sales->findForUser($request->user(), $sale->id, ['items.product'])),
-                ], 409)->throwResponse();
-            }
-        }
+        $this->enforceVersionMatch(
+            $request,
+            $sale,
+            fn () => new SaleResource($this->sales->findForUser($request->user(), $sale->id, ['items.product'])),
+            'sale',
+        );
 
         $scoped = $this->sales->findForUser($request->user(), $sale->id);
         $updated = $this->saleService->updateSale($scoped, $request->user(), $request->validated());

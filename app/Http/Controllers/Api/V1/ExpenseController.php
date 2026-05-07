@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Concerns\EnforcesEntityVersion;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\StoreExpenseRequest;
 use App\Http\Requests\Api\V1\UpdateExpenseRequest;
@@ -16,6 +17,8 @@ use Illuminate\Validation\ValidationException;
 
 class ExpenseController extends Controller
 {
+    use EnforcesEntityVersion;
+
     public function __construct(
         private readonly ExpenseRepository $expenses,
         private readonly ExpenseService $expenseService,
@@ -75,14 +78,12 @@ class ExpenseController extends Controller
     {
         $this->authorize('update', $expense);
 
-        $clientVersion = $request->integer('version');
-        if ($clientVersion && $expense->version !== $clientVersion) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Conflict: expense was modified by another client.',
-                'server_data' => new ExpenseResource($this->expenses->findForUser($request->user(), $expense->id)),
-            ], 409)->throwResponse();
-        }
+        $this->enforceVersionMatch(
+            $request,
+            $expense,
+            fn () => new ExpenseResource($this->expenses->findForUser($request->user(), $expense->id)),
+            'expense',
+        );
 
         $scoped = $this->expenses->findForUser($request->user(), $expense->id);
         $updated = $this->expenseService->updateExpense($request->user(), $scoped, $request->validated());
@@ -97,14 +98,12 @@ class ExpenseController extends Controller
     {
         $this->authorize('delete', $expense);
 
-        $clientVersion = $request->integer('version');
-        if ($clientVersion && $expense->version !== $clientVersion) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Conflict: expense was modified by another client.',
-                'server_data' => new ExpenseResource($this->expenses->findForUser($request->user(), $expense->id)),
-            ], 409);
-        }
+        $this->enforceVersionMatch(
+            $request,
+            $expense,
+            fn () => new ExpenseResource($this->expenses->findForUser($request->user(), $expense->id)),
+            'expense',
+        );
 
         $scoped = $this->expenses->findForUser($request->user(), $expense->id);
         $this->expenseService->deleteExpense($request->user(), $scoped);

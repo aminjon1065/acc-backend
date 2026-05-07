@@ -87,7 +87,7 @@ test('owner cannot view sale from another shop by id tampering', function () {
         ->assertNotFound();
 });
 
-test('seller cannot create product expense purchase debt or view reports', function () {
+test('seller cannot create product expense purchase or view reports', function () {
     $shop = Shop::factory()->create();
     $seller = User::factory()->create([
         'shop_id' => $shop->id,
@@ -128,14 +128,27 @@ test('seller cannot create product expense purchase debt or view reports', funct
         ->assertForbidden();
 
     $this->actingAs($seller, 'sanctum')
-        ->postJson('/api/v1/debts', [
-            'person_name' => 'Blocked Debt',
-        ])
-        ->assertForbidden();
-
-    $this->actingAs($seller, 'sanctum')
         ->getJson('/api/v1/reports/sales')
         ->assertForbidden();
+});
+
+// Sellers ARE allowed to create their own debts (DebtPolicy::create permits
+// any operational role). The debt is auto-scoped to the seller via user_id
+// so it's only visible to them and their owner — see DebtPolicy::view.
+test('seller can create their own debt', function () {
+    $shop = Shop::factory()->create();
+    $seller = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Seller->value,
+    ]);
+
+    $this->actingAs($seller, 'sanctum')
+        ->postJson('/api/v1/debts', [
+            'person_name' => 'Customer Of Mine',
+            'opening_balance' => 50,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.person_name', 'Customer Of Mine');
 });
 
 test('suspended shop user cannot access protected api endpoints', function () {

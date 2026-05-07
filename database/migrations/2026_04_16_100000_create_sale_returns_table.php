@@ -12,9 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('sale_returns', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->foreignId('shop_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('sale_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuid('sale_id')->constrained()->cascadeOnDelete();
             $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
             $table->string('reason')->nullable();
             $table->string('refund_method')->default('cash');
@@ -25,10 +25,10 @@ return new class extends Migration
         });
 
         Schema::create('sale_return_items', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('sale_return_id')->constrained()->cascadeOnDelete();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('sale_return_id')->constrained()->cascadeOnDelete();
             $table->foreignId('shop_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('product_id')->nullable()->constrained()->cascadeOnDelete();
+            $table->foreignUuid('product_id')->nullable()->constrained()->cascadeOnDelete();
             $table->string('name')->nullable();
             $table->string('unit')->nullable();
             $table->decimal('quantity', 14, 3)->default(0);

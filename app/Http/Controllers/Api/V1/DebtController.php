@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Concerns\EnforcesEntityVersion;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\StoreDebtRequest;
 use App\Http\Requests\Api\V1\StoreDebtTransactionRequest;
@@ -17,6 +18,8 @@ use Illuminate\Validation\ValidationException;
 
 class DebtController extends Controller
 {
+    use EnforcesEntityVersion;
+
     public function __construct(
         private readonly DebtRepository $debts,
         private readonly DebtService $debtService,
@@ -85,16 +88,12 @@ class DebtController extends Controller
     {
         $this->authorize('update', $debt);
 
-        if ($request->has('version')) {
-            $clientVersion = $request->integer('version');
-            if ($debt->version !== $clientVersion) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Conflict: debt was modified by another client.',
-                    'server_data' => new DebtResource($this->debts->findForUser($request->user(), $debt->id, ['transactions'])),
-                ], 409)->throwResponse();
-            }
-        }
+        $this->enforceVersionMatch(
+            $request,
+            $debt,
+            fn () => new DebtResource($this->debts->findForUser($request->user(), $debt->id, ['transactions'])),
+            'debt',
+        );
 
         $scopedDebt = $this->debts->findForUser($request->user(), $debt->id);
         $updatedDebt = $this->debtService->storeTransaction(
@@ -141,14 +140,12 @@ class DebtController extends Controller
     {
         $this->authorize('delete', $debt);
 
-        $clientVersion = $request->integer('version');
-        if ($clientVersion && $debt->version !== $clientVersion) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Conflict: debt was modified by another client.',
-                'server_data' => new DebtResource($this->debts->findForUser($request->user(), $debt->id, ['transactions'])),
-            ], 409);
-        }
+        $this->enforceVersionMatch(
+            $request,
+            $debt,
+            fn () => new DebtResource($this->debts->findForUser($request->user(), $debt->id, ['transactions'])),
+            'debt',
+        );
 
         $scopedDebt = $this->debts->findForUser($request->user(), $debt->id);
         $this->debtService->deleteDebt($scopedDebt, $request->user());

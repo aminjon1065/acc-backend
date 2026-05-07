@@ -123,14 +123,20 @@ it('returns the aggregated mobile dashboard payload for a seller', function () {
         ->assertJsonPath('data.recent_expenses.0.name', 'Delivery');
 
     expect((float) $response->json('data.period_sales_total'))->toBe(50.0);
-    expect((float) $response->json('data.period_expenses_total'))->toBe(8.0);
-    expect((float) $response->json('data.period_cogs'))->toBe(20.0);
-    expect((float) $response->json('data.period_profit'))->toBe(22.0);
+
+    // Sellers must not see margin / cost data — DashboardController strips
+    // period_expenses_total, period_cogs, period_profit, and stock_total_cost
+    // from the response on purpose. Owners and super admins still receive
+    // them; that's covered by other tests.
+    expect($response->json('data.period_expenses_total'))->toBeNull();
+    expect($response->json('data.period_cogs'))->toBeNull();
+    expect($response->json('data.period_profit'))->toBeNull();
+    expect($response->json('data.stock_total_cost'))->toBeNull();
+
     expect((float) $response->json('data.debts_receivable'))->toBe(20.0);
     expect((float) $response->json('data.debts_payable'))->toBe(12.0);
     expect((float) $response->json('data.debts_net'))->toBe(8.0);
     expect((float) $response->json('data.stock_total_qty'))->toBe(12.0);
-    expect((float) $response->json('data.stock_total_cost'))->toBe(60.0);
     expect((float) $response->json('data.stock_total_sales_value'))->toBe(102.0);
     expect($response->json('data.recent_debt_transactions'))->toHaveCount(2);
     expect(collect($response->json('data.unpaid_debts'))->pluck('person_name')->all())
