@@ -69,4 +69,14 @@ class Sale extends Model
     {
         return $this->hasMany(SaleItem::class);
     }
+
+    /**
+     * Returns / refunds processed against this sale. The aggregated quantity
+     * across all return items must never exceed the original sale quantity
+     * per product — see SaleService::returnSale for the enforcement.
+     */
+    public function returns(): HasMany
+    {
+        return $this->hasMany(SaleReturn::class);
+    }
 }

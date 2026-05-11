@@ -211,3 +211,51 @@ test('super admin can create user in specific shop and filter list', function ()
         ->assertSuccessful()
         ->assertJsonPath('data.0.shop_id', $shopA->id);
 });
+
+test('destroy soft-deletes the user', function () {
+    $admin = User::factory()->create(['role' => UserRole::SuperAdmin->value]);
+    $target = User::factory()->create(['role' => UserRole::Owner->value]);
+
+    $this->actingAs($admin, 'sanctum')
+        ->deleteJson('/api/v1/users/'.$target->id)
+        ->assertSuccessful();
+
+    expect(User::find($target->id))->toBeNull();
+    expect(User::withTrashed()->find($target->id)?->deleted_at)->not->toBeNull();
+});
+
+test('updated_since returns soft-deleted users with deleted_at tombstone', function () {
+    $admin = User::factory()->create(['role' => UserRole::SuperAdmin->value]);
+    $deleted = User::factory()->create(['role' => UserRole::Owner->value]);
+
+    $cutoff = now()->subYear()->toISOString();
+    $deleted->delete();
+
+    $response = $this->actingAs($admin, 'sanctum')
+        ->getJson('/api/v1/users?updated_since='.urlencode($cutoff))
+        ->assertSuccessful();
+
+    $byId = collect($response->json('data'))->keyBy('id');
+
+    expect($byId->has($deleted->id))->toBeTrue();
+    expect($byId[$deleted->id]['deleted_at'])->not->toBeNull();
+});
+
+test('ids endpoint returns id+updated_at for users in scope', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create(['shop_id' => $shop->id, 'role' => UserRole::Owner->value]);
+    $seller = User::factory()->create(['shop_id' => $shop->id, 'role' => UserRole::Seller->value]);
+    User::factory()->create(['shop_id' => Shop::factory()->create()->id, 'role' => UserRole::Seller->value]);
+
+    $response = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/users/ids')
+        ->assertSuccessful();
+
+    $ids = collect($response->json('data'))->pluck('id')->all();
+
+    expect($ids)->toContain($owner->id)->toContain($seller->id);
+    // Seller from another shop is filtered out by the same scoping as `index`.
+    expect(count($ids))->toBe(2);
+    // Each entry exposes updated_at so clients can do staleness checks.
+    expect($response->json('data.0'))->toHaveKey('updated_at');
+});

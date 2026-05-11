@@ -43,6 +43,12 @@ class ProfileController extends Controller
 
     /**
      * Delete the user's profile.
+     *
+     * Self-deletion is final — `forceDelete()` removes the row entirely so
+     * the email is freed for re-registration. The soft-delete tombstone path
+     * exists for admin-initiated deletes (mobile clients prune local copies
+     * via `updated_since`); it isn't useful here because the user is logging
+     * themselves out and won't be polling for tombstones.
      */
     public function destroy(ProfileDeleteRequest $request): RedirectResponse
     {
@@ -50,7 +56,7 @@ class ProfileController extends Controller
 
         Auth::logout();
 
-        $user->delete();
+        $user->forceDelete();
 
         $request->session()->invalidate();
         $request->session()->regenerateToken();

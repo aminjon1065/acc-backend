@@ -29,6 +29,11 @@ Route::prefix('v1')->group(function (): void {
         Route::get('dashboard', [DashboardController::class, 'show'])->middleware('api_ability:dashboard,view');
 
         Route::get('products', [ProductController::class, 'index'])->middleware('api_ability:products,viewAny');
+        // `products/ids` MUST come before `products/{product}` — Laravel
+        // matches in declaration order, and the wildcard would otherwise
+        // capture "ids" as a product key. Same applies to users/ids and
+        // shops/ids below.
+        Route::get('products/ids', [ProductController::class, 'ids'])->middleware('api_ability:products,viewAny');
         Route::post('products', [ProductController::class, 'store'])->middleware(['api_ability:products,create', 'throttle:mobile-writes', 'idempotent']);
         Route::get('products/{product}', [ProductController::class, 'show'])->middleware('api_ability:products,view');
         Route::get('products/{product}/movements', [ProductController::class, 'movements'])->middleware('api_ability:products,view');
@@ -64,12 +69,14 @@ Route::prefix('v1')->group(function (): void {
         Route::post('sales/{sale}/return', [SaleController::class, 'return'])->middleware(['api_ability:sales,return', 'throttle:mobile-writes', 'idempotent']);
 
         Route::get('shops', [ShopController::class, 'index'])->middleware('api_ability:shops,viewAny');
+        Route::get('shops/ids', [ShopController::class, 'ids'])->middleware('api_ability:shops,viewAny');
         Route::post('shops', [ShopController::class, 'store'])->middleware(['api_ability:shops,create', 'idempotent']);
         Route::get('shops/{shop}', [ShopController::class, 'show'])->middleware('api_ability:shops,view');
         Route::match(['put', 'patch'], 'shops/{shop}', [ShopController::class, 'update'])->middleware(['api_ability:shops,update', 'idempotent']);
         Route::delete('shops/{shop}', [ShopController::class, 'destroy'])->middleware(['api_ability:shops,delete', 'idempotent']);
 
         Route::get('users', [UserController::class, 'index'])->middleware('api_ability:users,viewAny');
+        Route::get('users/ids', [UserController::class, 'ids'])->middleware('api_ability:users,viewAny');
         Route::post('users', [UserController::class, 'store'])->middleware(['api_ability:users,create', 'idempotent']);
         Route::get('users/{user}', [UserController::class, 'show'])->middleware('api_ability:users,view');
         Route::match(['put', 'patch'], 'users/{user}', [UserController::class, 'update'])->middleware(['api_ability:users,update', 'idempotent']);

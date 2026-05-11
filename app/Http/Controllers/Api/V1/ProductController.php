@@ -82,6 +82,31 @@ class ProductController extends Controller
     }
 
     /**
+     * Lightweight id-list for client-side reconcile. Returns every product id
+     * the user can see along with its `updated_at`. Mobile clients call this
+     * periodically to prune local rows whose id is no longer on the server
+     * (i.e. hard-deleted), without paying the cost of pulling full rows.
+     *
+     * No pagination — the payload is `{id, updated_at}` per row, which scales
+     * to tens of thousands per tenant well within a single response.
+     */
+    public function ids(Request $request): JsonResponse
+    {
+        $this->authorize('viewAny', Product::class);
+
+        $rows = $this->products->queryForUser($request->user())
+            ->select(['id', 'updated_at'])
+            ->orderBy('id')
+            ->get()
+            ->map(fn (Product $p) => [
+                'id' => $p->id,
+                'updated_at' => $p->updated_at?->toISOString(),
+            ]);
+
+        return response()->json(['data' => $rows]);
+    }
+
+    /**
      * Store a newly created resource in storage.
      */
     public function store(StoreProductRequest $request): ProductResource

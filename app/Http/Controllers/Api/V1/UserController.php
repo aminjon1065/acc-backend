@@ -46,9 +46,64 @@ class UserController extends Controller
             $users->whereKey($actor->id);
         }
 
+        // Delta-sync support: clients pass updated_since to receive only
+        // records changed after their last sync, plus soft-deleted rows so
+        // local copies can be removed. Mirrors ShopController::index.
+        if ($request->filled('updated_since')) {
+            $users->where('updated_at', '>', $request->input('updated_since'));
+            $users->withTrashed();
+        }
+
+        if ($request->filled('updated_before')) {
+            $users->where('updated_at', '<', $request->input('updated_before'));
+        }
+
         return UserResource::collection(
             $users->latest('id')->paginate($request->integer('limit', 20))->withQueryString()
         );
+    }
+
+    /**
+     * Lightweight id-list for client-side reconcile. See
+     * ProductController::ids for the rationale — same contract. The same
+     * role-based scoping as `index()` applies here so each role only sees
+     * the users it's allowed to know about.
+     */
+    public function ids(Request $request): JsonResponse
+    {
+        $this->authorize('viewAny', User::class);
+
+        $actor = $request->user();
+        $users = User::query();
+
+        if ($actor->isSuperAdmin()) {
+            if ($request->filled('shop_id')) {
+                $users->where('shop_id', $request->integer('shop_id'));
+            }
+        } elseif ($actor->role === UserRole::Owner) {
+            $ownedIds = $actor->owned_shop_ids;
+            $users->where(function ($query) use ($actor, $ownedIds): void {
+                $query
+                    ->where('id', $actor->id)
+                    ->orWhere(function ($q) use ($ownedIds): void {
+                        $q->where('role', UserRole::Seller->value)
+                            ->whereIn('shop_id', $ownedIds);
+                    });
+            });
+        } elseif ($actor->role === UserRole::Seller) {
+            $users->whereKey($actor->id);
+        }
+
+        $rows = $users
+            ->select(['id', 'updated_at'])
+            ->orderBy('id')
+            ->get()
+            ->map(fn (User $u) => [
+                'id' => $u->id,
+                'updated_at' => $u->updated_at?->toISOString(),
+            ]);
+
+        return response()->json(['data' => $rows]);
     }
 
     /**

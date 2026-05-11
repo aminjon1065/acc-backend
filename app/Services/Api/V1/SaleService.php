@@ -6,6 +6,7 @@ use App\Enums\PricingMode;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleReturn;
+use App\Models\SaleReturnItem;
 use App\Models\User;
 use App\Repositories\Api\V1\SaleRepository;
 use App\Services\AuditLogger;
@@ -377,6 +378,11 @@ class SaleService
         return DB::transaction(function () use ($actor, $sale, $items, $reason, $refundMethod): SaleReturn {
             $shopId = (int) $sale->shop_id;
 
+            // Lock the sale row so two concurrent return attempts can't both
+            // pass the "already-returned" check and double-refund stock.
+            $sale = Sale::query()->whereKey($sale->id)->lockForUpdate()->firstOrFail();
+            $sale->loadMissing('items');
+
             $productIds = collect($items)->pluck('product_id')->filter()->unique()->values();
 
             $products = $productIds->isNotEmpty()
@@ -391,12 +397,31 @@ class SaleService
             $saleItemPrices = $sale->items->keyBy('product_id')->map(fn ($i) => (float) $i->price);
             $saleItemQuantities = $sale->items->keyBy('product_id')->map(fn ($i) => (float) $i->quantity);
 
+            // Tally how much of each product has ALREADY been returned for
+            // this sale. Without this the check below only compares against
+            // the original sale quantity, so the same sale could be refunded
+            // any number of times — stock gets credited each pass and the
+            // sale's `paid`/`debt` keep marching toward zero.
+            $alreadyReturnedByProduct = SaleReturnItem::query()
+                ->whereHas('saleReturn', fn ($q) => $q->where('sale_id', $sale->id))
+                ->select('product_id')
+                ->selectRaw('SUM(quantity) as total_qty')
+                ->groupBy('product_id')
+                ->pluck('total_qty', 'product_id')
+                ->map(fn ($v) => (float) $v);
+
             $returnItemsData = [];
             $returnTotal = 0.0;
 
             foreach ($items as $item) {
                 $productId = $item['product_id'];
                 $quantity = (float) $item['quantity'];
+
+                if ($quantity <= 0) {
+                    throw ValidationException::withMessages([
+                        'items' => ["Return quantity must be positive for product #{$productId}."],
+                    ]);
+                }
 
                 $product = $products->get($productId);
 
@@ -410,9 +435,11 @@ class SaleService
                         'items' => ["Product #{$productId} was not in the original sale."],
                     ]);
                 }
-                if ($quantity > $originalQty) {
+                $alreadyReturned = (float) ($alreadyReturnedByProduct[$productId] ?? 0);
+                $remaining = $originalQty - $alreadyReturned;
+                if ($quantity > $remaining) {
                     throw ValidationException::withMessages([
-                        'items' => ["Return quantity ({$quantity}) exceeds original sale quantity ({$originalQty}) for product #{$productId}."],
+                        'items' => ["Cannot return {$quantity} of product #{$productId}: only {$remaining} of original {$originalQty} remain (already returned {$alreadyReturned})."],
                     ]);
                 }
 

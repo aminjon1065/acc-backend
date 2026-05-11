@@ -50,6 +50,33 @@ class ShopController extends Controller
     }
 
     /**
+     * Lightweight id-list for client-side reconcile. See
+     * ProductController::ids for the rationale — same contract.
+     */
+    public function ids(Request $request): JsonResponse
+    {
+        $this->authorize('viewAny', Shop::class);
+
+        $shops = Shop::query();
+
+        $accessibleShopIds = $request->user()->accessibleShopIds();
+        if ($accessibleShopIds !== null) {
+            $shops->whereIn('id', $accessibleShopIds);
+        }
+
+        $rows = $shops
+            ->select(['id', 'updated_at'])
+            ->orderBy('id')
+            ->get()
+            ->map(fn (Shop $s) => [
+                'id' => $s->id,
+                'updated_at' => $s->updated_at?->toISOString(),
+            ]);
+
+        return response()->json(['data' => $rows]);
+    }
+
+    /**
      * Store a newly created resource in storage.
      */
     public function store(StoreShopRequest $request): ShopResource

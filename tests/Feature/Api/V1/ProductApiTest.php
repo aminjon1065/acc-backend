@@ -201,3 +201,26 @@ test('super admin can access products from all shops', function () {
         ->assertOk()
         ->assertJsonCount(5, 'data');
 });
+
+test('products ids endpoint returns id+updated_at scoped to actor', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create(['shop_id' => $shop->id, 'role' => UserRole::Owner->value]);
+    $shop->update(['owner_id' => $owner->id]);
+
+    $a = Product::factory()->create(['shop_id' => $shop->id]);
+    $b = Product::factory()->create(['shop_id' => $shop->id]);
+
+    // Product in another shop — out of scope.
+    $otherShop = Shop::factory()->create();
+    Product::factory()->create(['shop_id' => $otherShop->id]);
+
+    $response = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/products/ids')
+        ->assertSuccessful();
+
+    $ids = collect($response->json('data'))->pluck('id')->all();
+
+    expect($ids)->toContain($a->id)->toContain($b->id);
+    expect(count($ids))->toBe(2);
+    expect($response->json('data.0'))->toHaveKey('updated_at');
+});

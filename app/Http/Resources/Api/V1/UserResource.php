@@ -29,6 +29,11 @@ class UserResource extends JsonResource
             'pin_reset_required' => (bool) $this->pin_reset_required,
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
+            // Soft-delete tombstone. Mobile clients delete the matching local
+            // row when this is non-null on a delta-sync (`updated_since`)
+            // response; live writes never see a non-null value because the
+            // default scope hides trashed rows.
+            'deleted_at' => $this->deleted_at?->toISOString(),
         ];
     }
 }

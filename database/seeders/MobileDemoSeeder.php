@@ -466,7 +466,10 @@ class MobileDemoSeeder extends Seeder
         Debt::query()->withTrashed()->whereIn('shop_id', $shopIds)->forceDelete();
         Product::query()->withTrashed()->whereIn('shop_id', $shopIds)->forceDelete();
         ShopSetting::query()->whereIn('shop_id', $shopIds)->delete();
-        User::query()->whereIn('email', $demoUserEmails)->delete();
+        // forceDelete: User now uses SoftDeletes, but the demo seeder must
+        // wipe rows entirely so a re-seed doesn't trip the unique email index
+        // on the leftover tombstones.
+        User::query()->withTrashed()->whereIn('email', $demoUserEmails)->forceDelete();
     }
 
     private function seedCurrencies(): void

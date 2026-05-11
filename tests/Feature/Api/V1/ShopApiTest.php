@@ -54,3 +54,19 @@ test('owner can only see own shop and cannot create new shops', function () {
         ])
         ->assertForbidden();
 });
+
+test('shops ids endpoint returns id+updated_at scoped to actor', function () {
+    $owner = \App\Models\User::factory()->create(['role' => \App\UserRole::Owner->value]);
+    $owned = \App\Models\Shop::factory()->create(['owner_id' => $owner->id]);
+    \App\Models\Shop::factory()->create(); // unrelated, must NOT appear
+
+    $response = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/shops/ids')
+        ->assertSuccessful();
+
+    $ids = collect($response->json('data'))->pluck('id')->all();
+
+    expect($ids)->toContain($owned->id);
+    expect(count($ids))->toBe(1);
+    expect($response->json('data.0'))->toHaveKey('updated_at');
+});

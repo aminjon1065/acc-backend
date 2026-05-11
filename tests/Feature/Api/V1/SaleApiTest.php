@@ -426,3 +426,145 @@ test('seller cannot delete a sale', function () {
         ->deleteJson("/api/v1/sales/{$saleId}")
         ->assertForbidden();
 });
+
+test('return restocks once and rejects further returns beyond original quantity', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'created_by' => $owner->id,
+        'stock_quantity' => 10,
+        'cost_price' => 4,
+        'sale_price' => 10,
+    ]);
+
+    // Sell 1 unit. Stock goes 10 → 9.
+    $sale = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'type' => 'product',
+            'paid' => 10,
+            'payment_type' => 'cash',
+            'items' => [
+                ['product_id' => $product->id, 'quantity' => 1, 'price' => 10],
+            ],
+        ])
+        ->assertSuccessful()
+        ->json('data');
+
+    expect((float) $product->fresh()->stock_quantity)->toBe(9.0);
+
+    // First return: 1 unit. Stock goes 9 → 10.
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/sales/{$sale['id']}/return", [
+            'items' => [
+                ['product_id' => $product->id, 'quantity' => 1],
+            ],
+        ])
+        ->assertSuccessful();
+
+    expect((float) $product->fresh()->stock_quantity)->toBe(10.0);
+
+    // Second return must be rejected — nothing left to return on this sale.
+    // Without the fix, this would credit another unit and stock would tick to 11.
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/sales/{$sale['id']}/return", [
+            'items' => [
+                ['product_id' => $product->id, 'quantity' => 1],
+            ],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['items']);
+
+    expect((float) $product->fresh()->stock_quantity)->toBe(10.0);
+});
+
+test('partial returns aggregate against the original sold quantity', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'created_by' => $owner->id,
+        'stock_quantity' => 10,
+        'cost_price' => 4,
+        'sale_price' => 10,
+    ]);
+
+    // Sell 5 units. Stock 10 → 5.
+    $sale = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'type' => 'product',
+            'paid' => 50,
+            'payment_type' => 'cash',
+            'items' => [
+                ['product_id' => $product->id, 'quantity' => 5, 'price' => 10],
+            ],
+        ])
+        ->assertSuccessful()
+        ->json('data');
+
+    // Return 2, then 2 more, then attempt 2 (only 1 left → rejected).
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/sales/{$sale['id']}/return", [
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+        ])
+        ->assertSuccessful();
+    expect((float) $product->fresh()->stock_quantity)->toBe(7.0);
+
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/sales/{$sale['id']}/return", [
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+        ])
+        ->assertSuccessful();
+    expect((float) $product->fresh()->stock_quantity)->toBe(9.0);
+
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/sales/{$sale['id']}/return", [
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+        ])
+        ->assertUnprocessable();
+    expect((float) $product->fresh()->stock_quantity)->toBe(9.0);
+
+    // Last unit can still be returned.
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/sales/{$sale['id']}/return", [
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ])
+        ->assertSuccessful();
+    expect((float) $product->fresh()->stock_quantity)->toBe(10.0);
+});
+
+test('return rejects non-positive quantities', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'created_by' => $owner->id,
+        'stock_quantity' => 5,
+        'cost_price' => 4,
+        'sale_price' => 10,
+    ]);
+
+    $sale = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'type' => 'product',
+            'paid' => 10,
+            'payment_type' => 'cash',
+            'items' => [['product_id' => $product->id, 'quantity' => 1, 'price' => 10]],
+        ])
+        ->json('data');
+
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/sales/{$sale['id']}/return", [
+            'items' => [['product_id' => $product->id, 'quantity' => 0]],
+        ])
+        ->assertUnprocessable();
+});
