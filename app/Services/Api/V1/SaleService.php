@@ -3,7 +3,6 @@
 namespace App\Services\Api\V1;
 
 use App\Enums\PricingMode;
-use App\Models\Debt;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleReturn;
@@ -130,41 +129,11 @@ class SaleService
                 'debt' => $debt,
             ]);
 
-            if ($debt > 0 && $customerName !== null) {
-                $existingDebt = Debt::query()
-                    ->where('shop_id', $shopId)
-                    ->where('person_name', $customerName)
-                    ->where('direction', 'receivable')
-                    ->first();
-
-                if ($existingDebt) {
-                    $existingDebt->increment('balance', $debt);
-                    $existingDebt->transactions()->create([
-                        'shop_id' => $shopId,
-                        'user_id' => $actor->id,
-                        'type' => 'give',
-                        'amount' => $debt,
-                        'note' => "Sale #{$sale->id}",
-                    ]);
-                    DB::table('debts')->where('id', $existingDebt->id)->increment('version');
-                } else {
-                    $newDebt = Debt::query()->create([
-                        'shop_id' => $shopId,
-                        'user_id' => $actor->id,
-                        'person_name' => $customerName,
-                        'direction' => 'receivable',
-                        'balance' => $debt,
-                    ]);
-                    $newDebt->transactions()->create([
-                        'shop_id' => $shopId,
-                        'user_id' => $actor->id,
-                        'type' => 'give',
-                        'amount' => $debt,
-                        'note' => "Sale #{$sale->id}",
-                    ]);
-                }
-            }
-
+            // Debts are now a standalone entity managed from the Debts tab.
+            // The sale tracks its own `debt` amount for receipt-level
+            // accounting, but no longer mints a `debts` row automatically —
+            // operators decide whether the unpaid balance belongs to a
+            // long-term debtor relationship.
             $freshSale = $sale->fresh(['items.product']);
 
             $this->auditLogger->log('sales.created', $actor, $freshSale, [
@@ -194,96 +163,104 @@ class SaleService
     public function updateSale(Sale $sale, User $actor, array $data): Sale
     {
         return DB::transaction(function () use ($sale, $actor, $data): Sale {
-            $oldProductIds = $sale->items->pluck('product_id')->filter()->unique()->values();
-            $oldProducts = $oldProductIds->isNotEmpty()
-                ? Product::query()->whereIn('id', $oldProductIds)->lockForUpdate()->get()->keyBy('id')
-                : collect();
-
-            // Restore stock for old items before deleting
-            foreach ($sale->items as $oldItem) {
-                if ($oldItem->product_id && $oldItem->quantity) {
-                    $oldProducts->get($oldItem->product_id)?->increment('stock_quantity', (float) $oldItem->quantity);
-                }
-            }
-
-            // Delete old items
-            $sale->items()->delete();
-
-            $items = $data['items'] ?? [];
             $shopId = $sale->shop_id;
 
-            $productIds = collect($items)->pluck('product_id')->filter()->unique()->values();
-            $products = $productIds->isNotEmpty()
-                ? $this->sales
-                    ->queryProductsForShop($actor, $shopId)
-                    ->whereIn('id', $productIds)
-                    ->lockForUpdate()
-                    ->get()
-                    ->keyBy('id')
-                : collect();
+            // Partial-update guard: only touch items / stock when the
+            // caller explicitly sent an `items` field. Without this, a
+            // mobile PATCH that only changes `customer_name` would
+            // silently wipe every line item (old behaviour defaulted
+            // missing items to `[]`).
+            $itemsChanged = array_key_exists('items', $data);
+            $subTotal = $itemsChanged ? 0.0 : (float) $sale->total + (float) $sale->discount;
 
-            $subTotal = 0.0;
+            if ($itemsChanged) {
+                $oldProductIds = $sale->items->pluck('product_id')->filter()->unique()->values();
+                $oldProducts = $oldProductIds->isNotEmpty()
+                    ? Product::query()->whereIn('id', $oldProductIds)->lockForUpdate()->get()->keyBy('id')
+                    : collect();
 
-            foreach ($items as $item) {
-                $productId = $item['product_id'] ?? null;
-                $quantity = (float) ($item['quantity'] ?? 0);
-
-                if ($productId) {
-                    $product = $products->get($productId);
-
-                    if (! $product) {
-                        throw ValidationException::withMessages([
-                            'items' => ["Product #{$productId} not found. Sync products before updating sales with them."],
-                        ]);
+                // Restore stock for old items before deleting
+                foreach ($sale->items as $oldItem) {
+                    if ($oldItem->product_id && $oldItem->quantity) {
+                        $oldProducts->get($oldItem->product_id)?->increment('stock_quantity', (float) $oldItem->quantity);
                     }
+                }
 
-                    if ((float) $product->stock_quantity < $quantity) {
-                        throw ValidationException::withMessages([
-                            'items' => ["Insufficient stock for product: {$product->name}"],
+                // Delete old items
+                $sale->items()->delete();
+
+                $items = $data['items'] ?? [];
+                $productIds = collect($items)->pluck('product_id')->filter()->unique()->values();
+                $products = $productIds->isNotEmpty()
+                    ? $this->sales
+                        ->queryProductsForShop($actor, $shopId)
+                        ->whereIn('id', $productIds)
+                        ->lockForUpdate()
+                        ->get()
+                        ->keyBy('id')
+                    : collect();
+
+                foreach ($items as $item) {
+                    $productId = $item['product_id'] ?? null;
+                    $quantity = (float) ($item['quantity'] ?? 0);
+
+                    if ($productId) {
+                        $product = $products->get($productId);
+
+                        if (! $product) {
+                            throw ValidationException::withMessages([
+                                'items' => ["Product #{$productId} not found. Sync products before updating sales with them."],
+                            ]);
+                        }
+
+                        if ((float) $product->stock_quantity < $quantity) {
+                            throw ValidationException::withMessages([
+                                'items' => ["Insufficient stock for product: {$product->name}"],
+                            ]);
+                        }
+
+                        $price = $this->resolveProductPrice($product, $quantity, $item);
+                        $lineTotal = $quantity * $price;
+                        $costPrice = (float) $product->cost_price;
+
+                        $product->lockForUpdate();
+                        $product->decrement('stock_quantity', $quantity);
+
+                        $sale->items()->create([
+                            'shop_id' => $shopId,
+                            'product_id' => $productId,
+                            'name' => $item['name'] ?? null,
+                            'unit' => $item['unit'] ?? null,
+                            'quantity' => $quantity,
+                            'price' => $price,
+                            'cost_price' => $costPrice,
+                            'total' => $lineTotal,
                         ]);
+
+                        $subTotal += $lineTotal;
+                    } else {
+                        $price = (float) ($item['price'] ?? 0);
+                        $lineTotal = $quantity * $price;
+
+                        $sale->items()->create([
+                            'shop_id' => $shopId,
+                            'product_id' => null,
+                            'name' => $item['name'] ?? null,
+                            'unit' => $item['unit'] ?? null,
+                            'quantity' => $quantity,
+                            'price' => $price,
+                            'cost_price' => 0,
+                            'total' => $lineTotal,
+                        ]);
+
+                        $subTotal += $lineTotal;
                     }
-
-                    $price = $this->resolveProductPrice($product, $quantity, $item);
-                    $lineTotal = $quantity * $price;
-                    $costPrice = (float) $product->cost_price;
-
-                    $product->lockForUpdate();
-                    $product->decrement('stock_quantity', $quantity);
-
-                    $sale->items()->create([
-                        'shop_id' => $shopId,
-                        'product_id' => $productId,
-                        'name' => $item['name'] ?? null,
-                        'unit' => $item['unit'] ?? null,
-                        'quantity' => $quantity,
-                        'price' => $price,
-                        'cost_price' => $costPrice,
-                        'total' => $lineTotal,
-                    ]);
-
-                    $subTotal += $lineTotal;
-                } else {
-                    $price = (float) ($item['price'] ?? 0);
-                    $lineTotal = $quantity * $price;
-
-                    $sale->items()->create([
-                        'shop_id' => $shopId,
-                        'product_id' => null,
-                        'name' => $item['name'] ?? null,
-                        'unit' => $item['unit'] ?? null,
-                        'quantity' => $quantity,
-                        'price' => $price,
-                        'cost_price' => 0,
-                        'total' => $lineTotal,
-                    ]);
-
-                    $subTotal += $lineTotal;
                 }
             }
 
-            $discount = (float) ($data['discount'] ?? 0);
-            $paid = (float) ($data['paid'] ?? 0);
-            $customerName = $data['customer_name'] ?? $sale->customer_name;
+            $discount = array_key_exists('discount', $data) ? (float) $data['discount'] : (float) $sale->discount;
+            $paid = array_key_exists('paid', $data) ? (float) $data['paid'] : (float) $sale->paid;
+            $customerName = array_key_exists('customer_name', $data) ? $data['customer_name'] : $sale->customer_name;
 
             if ($discount > $subTotal) {
                 throw ValidationException::withMessages([
@@ -301,7 +278,7 @@ class SaleService
                 'debt' => $debt,
                 'total' => $total,
                 'payment_type' => $data['payment_type'] ?? $sale->payment_type,
-                'notes' => $data['notes'] ?? $sale->notes,
+                'notes' => array_key_exists('notes', $data) ? $data['notes'] : $sale->notes,
             ]);
             $sale->increment('version');
 
@@ -344,6 +321,47 @@ class SaleService
                 : (float) $product->sale_price,
             PricingMode::Fixed => (float) $product->sale_price,
         };
+    }
+
+    /**
+     * Soft-delete the sale and roll the sold quantities back into stock.
+     * Used by the mobile detail screen's "Удалить" action; gated to
+     * super_admin / owner by SalePolicy::delete.
+     *
+     * SoftDeletes on the Sale model keeps the row + its items reachable
+     * via `withTrashed()` so audit + dashboard back-history stays whole.
+     * We still increment `version` and bump caches so subsequent index
+     * pulls drop the row from listing.
+     */
+    public function deleteSale(Sale $sale, User $actor): void
+    {
+        DB::transaction(function () use ($sale, $actor): void {
+            $shopId = (int) $sale->shop_id;
+
+            // Restore stock — same shape as updateSale's old-item rollback.
+            $productIds = $sale->items->pluck('product_id')->filter()->unique()->values();
+            $products = $productIds->isNotEmpty()
+                ? Product::query()->whereIn('id', $productIds)->lockForUpdate()->get()->keyBy('id')
+                : collect();
+
+            foreach ($sale->items as $item) {
+                if ($item->product_id && $item->quantity) {
+                    $products->get($item->product_id)?->increment('stock_quantity', (float) $item->quantity);
+                }
+            }
+
+            $sale->increment('version');
+            $sale->delete();
+
+            $this->auditLogger->log('sales.deleted', $actor, $sale, [
+                'customer_name' => $sale->customer_name,
+                'total' => (float) $sale->total,
+                'items_count' => $sale->items->count(),
+            ], $shopId);
+
+            $this->productCatalogCache->bumpShop($shopId);
+            $this->dashboardCacheVersion->bumpShop($shopId);
+        });
     }
 
     /**
@@ -417,32 +435,17 @@ class SaleService
             }
 
             $refundAmount = min($returnTotal, (float) $sale->paid);
-            $originalDebt = (float) $sale->debt;
 
             $sale->update([
                 'paid' => max((float) $sale->paid - $refundAmount, 0),
                 'debt' => max((float) $sale->debt - $returnTotal, 0),
             ]);
 
-            if ($refundMethod === 'offset_debt' && $sale->customer_name !== null && $originalDebt > 0) {
-                $existingDebt = Debt::query()
-                    ->where('shop_id', $shopId)
-                    ->where('person_name', $sale->customer_name)
-                    ->where('direction', 'receivable')
-                    ->first();
-
-                if ($existingDebt) {
-                    $existingDebt->decrement('balance', $returnTotal);
-                    $existingDebt->transactions()->create([
-                        'shop_id' => $shopId,
-                        'user_id' => $actor->id,
-                        'type' => 'repay',
-                        'amount' => $returnTotal,
-                        'note' => "Return #{$sale->id}",
-                    ]);
-                    DB::table('debts')->where('id', $existingDebt->id)->increment('version');
-                }
-            }
+            // The `offset_debt` refund method used to walk the receivable
+            // Debt for the sale's customer and decrement it. That coupling
+            // is gone — Debts are managed manually now. We still accept
+            // the `offset_debt` value as a label in the return record so
+            // historical receipts read correctly; no further side effect.
 
             $returnRecord = $this->sales->createReturn([
                 'shop_id' => $shopId,

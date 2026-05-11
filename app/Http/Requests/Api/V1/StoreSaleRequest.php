@@ -82,9 +82,15 @@ class StoreSaleRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'items.required' => 'At least one sale item is required.',
-            'items.*.price.required' => 'Price is required for each item.',
-            'items.*.quantity.required' => 'Quantity is required for each item.',
+            'items.required' => 'Добавьте хотя бы один товар в продажу.',
+            'items.*.price.required' => 'Укажите цену для каждой позиции.',
+            'items.*.quantity.required' => 'Укажите количество для каждой позиции.',
+            // Soft-deleted products fail `exists:products,id`. The cashier
+            // usually hits this when local cache still has a product the
+            // admin removed on the backend — friendlier copy makes the
+            // fix path obvious (refresh the catalog).
+            'items.*.product_id.required' => 'Выберите товар для каждой позиции.',
+            'items.*.product_id.exists' => 'Товар не найден или был удалён. Обновите каталог и попробуйте снова.',
         ];
     }
 }

@@ -47,7 +47,14 @@ class SalePolicy
 
     public function delete(User $user, Sale $sale): bool
     {
-        return false;
+        // Sellers cannot delete sales — anti-fraud / audit boundary. Same
+        // rule as update(): super-admin everywhere, owner inside their
+        // accessible shops only.
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        return $user->role === UserRole::Owner && $user->canAccessShop((int) $sale->shop_id);
     }
 
     public function restore(User $user, Sale $sale): bool

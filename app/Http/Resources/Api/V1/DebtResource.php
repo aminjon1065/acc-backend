@@ -26,6 +26,11 @@ class DebtResource extends JsonResource
             'id' => $this->id,
             'shop_id' => $this->shop_id,
             'user_id' => $this->user_id,
+            // Display name of the user who originally created the debt
+            // record. Mobile shows this in the list / detail so cashiers
+            // can answer "кто дал в долг" without a second lookup.
+            // Populated only when the controller eager-loads `user`.
+            'created_by_name' => $this->whenLoaded('user', fn () => $this->user?->name),
             'person_name' => $this->person_name,
             'direction' => $this->direction,
             'opening_balance' => $openingBalance,
@@ -37,6 +42,12 @@ class DebtResource extends JsonResource
                     'type' => $transaction->type,
                     'amount' => (float) $transaction->amount,
                     'note' => $transaction->note,
+                    // Per-transaction author. Eager-loaded by the controller
+                    // via `transactions.user:id,name`; null if the relation
+                    // isn't loaded (e.g. legacy callers).
+                    'created_by_name' => $transaction->relationLoaded('user')
+                        ? $transaction->user?->name
+                        : null,
                     'created_at' => $transaction->created_at?->toISOString(),
                 ])->values();
             }),

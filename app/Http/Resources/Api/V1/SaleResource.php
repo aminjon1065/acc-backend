@@ -18,6 +18,11 @@ class SaleResource extends JsonResource
             'id' => $this->id,
             'shop_id' => $this->shop_id,
             'user_id' => $this->user_id,
+            // Seller display name — populated only when the controller eager-
+            // loaded `user`. Mobile renders this in the sale list + detail
+            // so cashiers / owners can see who rang up the receipt without
+            // a second user lookup.
+            'seller_name' => $this->whenLoaded('user', fn () => $this->user?->name),
             'customer_name' => $this->customer_name,
             'type' => $this->type,
             'discount' => (float) $this->discount,

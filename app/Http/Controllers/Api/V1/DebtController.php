@@ -34,7 +34,7 @@ class DebtController extends Controller
         $debts = $this->debts->paginateForUser(
             $request->user(),
             $request->integer('limit', 20),
-            ['transactions'],
+            ['user:id,name', 'transactions.user:id,name'],
             $request,
         );
 
@@ -70,7 +70,7 @@ class DebtController extends Controller
     {
         $this->authorize('view', $debt);
 
-        $scoped = $this->debts->findForUser($request->user(), $debt->id, ['transactions']);
+        $scoped = $this->debts->findForUser($request->user(), $debt->id, ['user:id,name', 'transactions.user:id,name']);
 
         return new DebtResource($scoped);
     }
@@ -82,7 +82,7 @@ class DebtController extends Controller
         $this->enforceVersionMatch(
             $request,
             $debt,
-            fn () => new DebtResource($this->debts->findForUser($request->user(), $debt->id, ['transactions'])),
+            fn () => new DebtResource($this->debts->findForUser($request->user(), $debt->id, ['user:id,name', 'transactions.user:id,name'])),
             'debt',
         );
 
@@ -104,6 +104,7 @@ class DebtController extends Controller
         $this->authorize('view', $debt);
 
         $query = DebtTransaction::query()
+            ->with('user:id,name')
             ->where('debt_id', $debt->id)
             ->orderBy('created_at', 'asc');
 
@@ -122,6 +123,7 @@ class DebtController extends Controller
                 'type' => $tx->type,
                 'amount' => (float) $tx->amount,
                 'note' => $tx->note,
+                'created_by_name' => $tx->user?->name,
                 'created_at' => $tx->created_at?->toISOString(),
             ]),
         ]);
@@ -134,7 +136,7 @@ class DebtController extends Controller
         $this->enforceVersionMatch(
             $request,
             $debt,
-            fn () => new DebtResource($this->debts->findForUser($request->user(), $debt->id, ['transactions'])),
+            fn () => new DebtResource($this->debts->findForUser($request->user(), $debt->id, ['user:id,name', 'transactions.user:id,name'])),
             'debt',
         );
 

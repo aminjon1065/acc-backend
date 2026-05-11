@@ -2,12 +2,12 @@
 
 namespace App\Services\Api\V1;
 
+use App\Enums\DebtDirection;
 use App\Models\Debt;
 use App\Models\User;
 use App\Repositories\Api\V1\DebtRepository;
 use App\Services\AuditLogger;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 
 class DebtService
 {
@@ -62,18 +62,13 @@ class DebtService
     public function storeTransaction(Debt $debt, User $actor, string $type, float $amount, ?string $note, ?string $transactionId = null): Debt
     {
         return DB::transaction(function () use ($debt, $actor, $type, $amount, $note, $transactionId): Debt {
-            // Lock BEFORE reading balance — prevents race condition where concurrent
-            // requests both read the same balance, both pass validation, then both write
+            // Lock BEFORE reading balance — prevents race condition where
+            // concurrent requests both read the same balance and both
+            // write. We no longer reject `repay > balance` (the bazaar use
+            // case: customer overpays a 1000 debt with 1500 → store now
+            // owes 500). Instead we let the balance go negative inside the
+            // transaction and flip `direction` below.
             $debt->lockForUpdate();
-
-            if (in_array($type, ['take', 'repay'], true)) {
-                $maxAmount = (float) $debt->balance;
-                if ($amount > $maxAmount) {
-                    throw ValidationException::withMessages([
-                        'amount' => ["Amount ({$amount}) cannot exceed current balance ({$maxAmount})."],
-                    ]);
-                }
-            }
 
             $delta = match ($type) {
                 'give' => $amount,
@@ -94,13 +89,38 @@ class DebtService
 
             $debt->transactions()->create($txAttributes);
 
-            // Atomic increment using raw query builder to avoid Eloquent cast collision
-            // with DB::raw expressions on decimal-cast columns.
+            // Atomic increment using raw query builder to avoid Eloquent
+            // cast collision with DB::raw expressions on decimal columns.
             DB::table('debts')->where('id', $debt->id)->update([
                 'balance' => DB::raw("balance + {$delta}"),
             ]);
             $debt->increment('version');
             $debt->refresh();
+
+            // Overpayment / overcollection: balance crossed zero. The row
+            // now expresses a debt in the OPPOSITE direction — flip
+            // `direction` and store the absolute balance so the field
+            // stays unsigned, matching the rest of the codebase's
+            // invariant (Debt.balance >= 0, sign comes from direction).
+            //
+            // Example: receivable, balance 1000. Customer pays 1500.
+            //   raw balance after delta: -500
+            //   flip: direction → payable, balance → 500
+            //   meaning: store now owes the customer 500.
+            //
+            // The history transaction stays a `repay` of 1500 — that's
+            // what actually happened. The current balance / direction
+            // reflect the resulting state.
+            if ((float) $debt->balance < 0) {
+                $flipped = $debt->direction === DebtDirection::Receivable
+                    ? DebtDirection::Payable
+                    : DebtDirection::Receivable;
+                DB::table('debts')->where('id', $debt->id)->update([
+                    'balance' => abs((float) $debt->balance),
+                    'direction' => $flipped->value,
+                ]);
+                $debt->refresh();
+            }
 
             $freshDebt = $debt->fresh('transactions');
 

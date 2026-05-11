@@ -5,7 +5,6 @@ namespace App\Http\Resources\Api\V1;
 use App\UserRole;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
 
 class ProductResource extends JsonResource
 {
@@ -16,8 +15,13 @@ class ProductResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        // Build the asset URL against the *incoming* request host so mobile
+        // devices on a LAN (e.g. http://192.168.x.x:8000) get a reachable
+        // link. Previously this concatenated `Storage::disk('public')->url()`
+        // — which already includes APP_URL — producing a malformed
+        // `http://lan-host/...https://app-url/storage/...` URL.
         $imageUrl = $this->image_path
-            ? rtrim($request->getSchemeAndHttpHost(), '/').Storage::disk('public')->url($this->image_path)
+            ? rtrim($request->getSchemeAndHttpHost(), '/').'/storage/'.ltrim($this->image_path, '/')
             : null;
 
         $isSeller = $request->user()?->role === UserRole::Seller

@@ -296,3 +296,133 @@ test('idempotency key returns conflict for same key with different body', functi
         ->assertStatus(409)
         ->assertJsonPath('error', 'idempotency_conflict');
 });
+
+test('owner can patch sale metadata without touching items', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'stock_quantity' => 10,
+        'cost_price' => 100,
+        'sale_price' => 150,
+    ]);
+
+    $createResponse = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'customer_name' => 'Alice',
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+            'paid' => 300,
+        ])
+        ->assertSuccessful();
+    $saleId = $createResponse->json('data.id');
+
+    $this->actingAs($owner, 'sanctum')
+        ->patchJson("/api/v1/sales/{$saleId}", [
+            'customer_name' => 'Bob',
+            'payment_type' => 'card',
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.customer_name', 'Bob')
+        ->assertJsonPath('data.payment_type', 'card')
+        ->assertJsonPath('data.items.0.product_id', $product->id) // items untouched
+        ->assertJsonPath('data.total', 300); // total preserved
+
+    // Stock should NOT have moved — the partial patch must not touch items.
+    expect($product->fresh()->stock_quantity)->toEqual(8);
+});
+
+test('seller cannot patch a sale', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $seller = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Seller->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'stock_quantity' => 10,
+        'cost_price' => 100,
+        'sale_price' => 150,
+    ]);
+
+    $createResponse = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ])
+        ->assertSuccessful();
+    $saleId = $createResponse->json('data.id');
+
+    $this->actingAs($seller, 'sanctum')
+        ->patchJson("/api/v1/sales/{$saleId}", ['customer_name' => 'Snuck in'])
+        ->assertForbidden();
+});
+
+test('owner can delete a sale and stock is restored', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'stock_quantity' => 10,
+        'cost_price' => 100,
+        'sale_price' => 150,
+    ]);
+
+    $createResponse = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'items' => [['product_id' => $product->id, 'quantity' => 3]],
+        ])
+        ->assertSuccessful();
+    $saleId = $createResponse->json('data.id');
+
+    expect($product->fresh()->stock_quantity)->toEqual(7);
+
+    $this->actingAs($owner, 'sanctum')
+        ->deleteJson("/api/v1/sales/{$saleId}")
+        ->assertSuccessful();
+
+    // Stock restored to pre-sale level.
+    expect($product->fresh()->stock_quantity)->toEqual(10);
+
+    // Sale is soft-deleted — index / show no longer returns it.
+    $this->actingAs($owner, 'sanctum')
+        ->getJson("/api/v1/sales/{$saleId}")
+        ->assertNotFound();
+});
+
+test('seller cannot delete a sale', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $seller = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Seller->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'stock_quantity' => 5,
+        'cost_price' => 100,
+        'sale_price' => 150,
+    ]);
+
+    $createResponse = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ])
+        ->assertSuccessful();
+    $saleId = $createResponse->json('data.id');
+
+    $this->actingAs($seller, 'sanctum')
+        ->deleteJson("/api/v1/sales/{$saleId}")
+        ->assertForbidden();
+});

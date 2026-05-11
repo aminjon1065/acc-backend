@@ -39,10 +39,11 @@ class StorePurchaseRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'items.required' => 'At least one purchase item is required.',
-            'items.*.product_id.required' => 'Product is required for each item.',
-            'items.*.quantity.required' => 'Quantity is required for each item.',
-            'items.*.price.required' => 'Price is required for each item.',
+            'items.required' => 'Добавьте хотя бы один товар в приход.',
+            'items.*.product_id.required' => 'Выберите товар для каждой позиции.',
+            'items.*.product_id.exists' => 'Товар не найден или был удалён. Обновите каталог и попробуйте снова.',
+            'items.*.quantity.required' => 'Укажите количество для каждой позиции.',
+            'items.*.price.required' => 'Укажите цену для каждой позиции.',
         ];
     }
 }

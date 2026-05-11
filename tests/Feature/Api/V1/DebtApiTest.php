@@ -77,3 +77,61 @@ test('super admin must provide shop_id when creating debt', function () {
         ->assertUnprocessable()
         ->assertJsonValidationErrors('shop_id');
 });
+
+test('overpayment flips debt direction (receivable → payable)', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+
+    // Customer owes us 1000 (receivable).
+    $createResponse = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/debts', [
+            'person_name' => 'Anvar B.',
+            'opening_balance' => 1000,
+        ])
+        ->assertSuccessful();
+
+    $debtId = $createResponse->json('data.id');
+
+    // Customer pays 1500 — overpaying by 500. Old behaviour rejected this
+    // with a validation error; the bazaar-friendly behaviour accepts and
+    // flips the books so we now owe the customer 500.
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/debts/{$debtId}/transactions", [
+            'type' => 'repay',
+            'amount' => 1500,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.balance', 500)
+        ->assertJsonPath('data.direction', 'payable');
+});
+
+test('overpayment in payable direction flips back to receivable', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+
+    // Direct DB seed: we owe the supplier 300 (payable, balance unsigned).
+    $debt = Debt::factory()->create([
+        'shop_id' => $shop->id,
+        'user_id' => $owner->id,
+        'person_name' => 'Supplier S.',
+        'direction' => 'payable',
+        'balance' => 300,
+    ]);
+
+    // We repay 800 — clearing the 300 and dropping 500 of advance/credit
+    // so the supplier now owes us 500.
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/debts/{$debt->id}/transactions", [
+            'type' => 'repay',
+            'amount' => 800,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.balance', 500)
+        ->assertJsonPath('data.direction', 'receivable');
+});

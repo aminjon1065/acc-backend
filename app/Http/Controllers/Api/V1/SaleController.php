@@ -32,7 +32,7 @@ class SaleController extends Controller
         $sales = $this->sales->paginateForUser(
             $request->user(),
             $request->integer('limit', 20),
-            ['items.product'],
+            ['items.product', 'user:id,name'],
             $request,
         );
 
@@ -71,7 +71,7 @@ class SaleController extends Controller
     {
         $this->authorize('view', $sale);
 
-        $scoped = $this->sales->findForUser($request->user(), $sale->id, ['items.product']);
+        $scoped = $this->sales->findForUser($request->user(), $sale->id, ['items.product', 'user:id,name']);
 
         return new SaleResource($scoped);
     }
@@ -86,7 +86,7 @@ class SaleController extends Controller
         $this->enforceVersionMatch(
             $request,
             $sale,
-            fn () => new SaleResource($this->sales->findForUser($request->user(), $sale->id, ['items.product'])),
+            fn () => new SaleResource($this->sales->findForUser($request->user(), $sale->id, ['items.product', 'user:id,name'])),
             'sale',
         );
 
@@ -94,6 +94,25 @@ class SaleController extends Controller
         $updated = $this->saleService->updateSale($scoped, $request->user(), $request->validated());
 
         return new SaleResource($updated);
+    }
+
+    /**
+     * Soft-delete a sale and restore the sold stock. super_admin /
+     * owner only — SalePolicy gates sellers out so they can't undo a
+     * receipt after the fact.
+     */
+    public function destroy(Request $request, Sale $sale): \Illuminate\Http\JsonResponse
+    {
+        $this->authorize('delete', $sale);
+
+        $scoped = $this->sales->findForUser($request->user(), $sale->id, ['items']);
+        $this->saleService->deleteSale($scoped, $request->user());
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Sale deleted.',
+            'data' => null,
+        ]);
     }
 
     /**
