@@ -89,6 +89,18 @@ class MobileDemoSeeder extends Seeder
                 'status' => 'active',
             ]);
 
+            // Second shop owned by the same owner — exercises the multi-shop
+            // owner UI (shop picker, owned_shop_ids accessor, write-time shop
+            // resolution in `User::resolveShopIdForWrite`).
+            $alphaShopTwo = $this->upsertShop([
+                'name' => 'Сомон Маркет — Филиал',
+                'owner_name' => self::DEMO_USERS['alphaOwner']['name'],
+                'phone' => '+992900000111',
+                'email' => 'somon2@ck.top',
+                'address' => 'Душанбе, улица Айни 47',
+                'status' => 'active',
+            ]);
+
             $betaShop = $this->upsertShop([
                 'name' => 'Сугд Минимаркет',
                 'owner_name' => self::DEMO_USERS['betaOwner']['name'],
@@ -107,20 +119,31 @@ class MobileDemoSeeder extends Seeder
                 'status' => 'suspended',
             ]);
 
-            $this->cleanupDemoData([$alphaShop, $betaShop, $gammaShop]);
+            $this->cleanupDemoData([$alphaShop, $alphaShopTwo, $betaShop, $gammaShop]);
 
-            $alphaOwner = $this->createDemoUserByKey('alphaOwner', $alphaShop->id);
+            // Owners are NOT pinned to a single `users.shop_id`. Ownership is
+            // expressed via `shops.owner_id`; the accessor `owned_shop_ids`
+            // resolves it. Setting shop_id on an owner row would be confusing
+            // and conflict with multi-shop ownership.
+            $alphaOwner = $this->createDemoUserByKey('alphaOwner', null);
             $alphaSellerOne = $this->createDemoUserByKey('alphaSellerOne', $alphaShop->id);
             $alphaSellerTwo = $this->createDemoUserByKey('alphaSellerTwo', $alphaShop->id);
 
-            $betaOwner = $this->createDemoUserByKey('betaOwner', $betaShop->id);
+            $betaOwner = $this->createDemoUserByKey('betaOwner', null);
             $betaSellerOne = $this->createDemoUserByKey('betaSellerOne', $betaShop->id);
             $betaSellerTwo = $this->createDemoUserByKey('betaSellerTwo', $betaShop->id);
 
-            $gammaOwner = $this->createDemoUserByKey('gammaOwner', $gammaShop->id);
+            $gammaOwner = $this->createDemoUserByKey('gammaOwner', null);
             $gammaSeller = $this->createDemoUserByKey('gammaSeller', $gammaShop->id);
 
+            // Assign ownership now that the owner users exist.
+            $alphaShop->forceFill(['owner_id' => $alphaOwner->id])->save();
+            $alphaShopTwo->forceFill(['owner_id' => $alphaOwner->id])->save();
+            $betaShop->forceFill(['owner_id' => $betaOwner->id])->save();
+            $gammaShop->forceFill(['owner_id' => $gammaOwner->id])->save();
+
             $this->createShopSetting($alphaShop->id, 'TJS', 2.50);
+            $this->createShopSetting($alphaShopTwo->id, 'TJS', 2.50);
             $this->createShopSetting($betaShop->id, 'USD', 1.75);
             $this->createShopSetting($gammaShop->id, 'TJS', 0.00);
 
@@ -135,20 +158,29 @@ class MobileDemoSeeder extends Seeder
                     'low_stock_alert' => 15,
                 ],
                 [
+                    // Markup-mode product: sale_price is derived from
+                    // cost_price * (1 + markup_percent / 100). Exercises the
+                    // dynamic-pricing branch in cart UI + reports.
                     'name' => 'Sugar',
                     'code' => 'ALPHA-SUGAR-5KG',
                     'unit' => 'kg',
                     'cost_price' => 6.80,
                     'sale_price' => 8.90,
+                    'pricing_mode' => 'markup',
+                    'markup_percent' => 30.0,
                     'stock_quantity' => 54,
                     'low_stock_alert' => 10,
                 ],
                 [
+                    // Bulk-pricing product: switches to bulk_price once cart
+                    // quantity >= bulk_threshold. Common for wholesale flows.
                     'name' => 'Sunflower Oil',
                     'code' => 'ALPHA-OIL-1L',
                     'unit' => 'liter',
                     'cost_price' => 18.00,
                     'sale_price' => 23.50,
+                    'bulk_price' => 21.00,
+                    'bulk_threshold' => 6,
                     'stock_quantity' => 37,
                     'low_stock_alert' => 8,
                 ],
@@ -160,6 +192,29 @@ class MobileDemoSeeder extends Seeder
                     'sale_price' => 36.00,
                     'stock_quantity' => 11,
                     'low_stock_alert' => 12,
+                ],
+            ]);
+
+            // Second alpha shop — smaller catalog, ensures multi-shop owner
+            // sees distinct products per shop in the UI.
+            $alphaShopTwoProducts = $this->seedProducts($alphaShopTwo, $alphaOwner, [
+                [
+                    'name' => 'Хлеб лаваш',
+                    'code' => 'ALPHA2-BREAD',
+                    'unit' => 'piece',
+                    'cost_price' => 2.00,
+                    'sale_price' => 3.50,
+                    'stock_quantity' => 60,
+                    'low_stock_alert' => 10,
+                ],
+                [
+                    'name' => 'Молоко 1L',
+                    'code' => 'ALPHA2-MILK-1L',
+                    'unit' => 'liter',
+                    'cost_price' => 7.50,
+                    'sale_price' => 9.50,
+                    'stock_quantity' => 25,
+                    'low_stock_alert' => 8,
                 ],
             ]);
 
@@ -244,6 +299,19 @@ class MobileDemoSeeder extends Seeder
                 ],
             );
 
+            // Purchase for the second alpha shop — multi-shop owners need
+            // to see stock movement scoped per shop, not shared across both.
+            $this->createPurchase(
+                $alphaShopTwo->id,
+                $alphaOwner->id,
+                'Хлебзавод №2',
+                Carbon::now()->subDays(5),
+                [
+                    ['product_id' => $alphaShopTwoProducts['ALPHA2-BREAD']->id, 'quantity' => 50, 'price' => 2.00],
+                    ['product_id' => $alphaShopTwoProducts['ALPHA2-MILK-1L']->id, 'quantity' => 20, 'price' => 7.50],
+                ],
+            );
+
             $this->createPurchase(
                 $betaShop->id,
                 $betaOwner->id,
@@ -315,6 +383,46 @@ class MobileDemoSeeder extends Seeder
                 ],
             );
 
+            // Service-type sale: no products, just a named service line.
+            // Exercises the `type=service` branch in SaleResource (renders
+            // service_name) and the nullable product_id path on sale_items.
+            $this->createSale(
+                $alphaShop->id,
+                $alphaOwner->id,
+                'Чайхона Рохат',
+                0.00,
+                150.00,
+                'cash',
+                Carbon::now()->subDays(2),
+                [
+                    [
+                        'name' => 'Ремонт холодильной витрины',
+                        'unit' => 'услуга',
+                        'quantity' => 1,
+                        'price' => 150.00,
+                        'cost_price' => 0,
+                    ],
+                ],
+                type: 'service',
+            );
+
+            // Sale on the second alpha shop — confirms shop scoping for a
+            // multi-shop owner end to end (this sale must NOT show up in
+            // alphaShop's list).
+            $this->createSale(
+                $alphaShopTwo->id,
+                $alphaOwner->id,
+                'Местный житель',
+                0.00,
+                15.50,
+                'cash',
+                Carbon::now()->subHours(20),
+                [
+                    ['product_id' => $alphaShopTwoProducts['ALPHA2-BREAD']->id, 'quantity' => 2, 'price' => 3.50, 'cost_price' => 2.00],
+                    ['product_id' => $alphaShopTwoProducts['ALPHA2-MILK-1L']->id, 'quantity' => 1, 'price' => 9.50, 'cost_price' => 7.50],
+                ],
+            );
+
             $this->createSale(
                 $betaShop->id,
                 $betaSellerOne->id,
@@ -370,6 +478,7 @@ class MobileDemoSeeder extends Seeder
             $this->createExpense($alphaShop->id, $alphaOwner->id, 'Доставка', 2, 35.00, 'Еженедельная доставка от поставщика', Carbon::now()->subDays(9));
             $this->createExpense($alphaShop->id, $alphaSellerTwo->id, 'Упаковка', 10, 3.50, 'Пакеты и коробки для покупателей', Carbon::now()->subDays(5));
             $this->createExpense($alphaShop->id, $alphaOwner->id, 'Интернет', 1, 180.00, 'Оплата интернета за месяц', Carbon::now()->subDays(1));
+            $this->createExpense($alphaShopTwo->id, $alphaOwner->id, 'Аренда филиала', 1, 800.00, 'Месячная аренда помещения', Carbon::now()->subDays(2));
 
             $this->createExpense($betaShop->id, $betaOwner->id, 'Доставка на такси', 3, 28.00, 'Городские расходы на доставку', Carbon::now()->subDays(8));
             $this->createExpense($betaShop->id, $betaSellerOne->id, 'Уборка', 4, 12.50, 'Чистящие средства для магазина', Carbon::now()->subDays(4));
@@ -396,6 +505,22 @@ class MobileDemoSeeder extends Seeder
                     ['type' => 'give', 'amount' => 60.00, 'note' => 'Стартовый долг', 'created_at' => Carbon::now()->subDays(10)],
                     ['type' => 'take', 'amount' => 15.00, 'note' => 'Возврат товара', 'created_at' => Carbon::now()->subDays(3)],
                 ],
+            );
+
+            // Payable debt — we owe the supplier money (the bazaar-style
+            // direction='payable' branch). The mobile UI flips colors and
+            // verbiage for this case; without a payable debt in seed data
+            // that codepath stays unexercised.
+            $this->createDebt(
+                $alphaShop->id,
+                $alphaOwner->id,
+                'Поставщик Душанбе Фуд Саплай',
+                Carbon::now()->subDays(8),
+                [
+                    ['type' => 'give', 'amount' => 320.00, 'note' => 'Закупка под отсрочку', 'created_at' => Carbon::now()->subDays(8)],
+                    ['type' => 'repay', 'amount' => 100.00, 'note' => 'Частичная оплата', 'created_at' => Carbon::now()->subDays(2)],
+                ],
+                direction: 'payable',
             );
 
             $this->createDebt(
@@ -490,7 +615,7 @@ class MobileDemoSeeder extends Seeder
         );
     }
 
-    private function createDemoUser(string $email, string $name, UserRole $role, int $shopId): User
+    private function createDemoUser(string $email, string $name, UserRole $role, ?int $shopId): User
     {
         return User::query()->create([
             'name' => $name,
@@ -502,7 +627,7 @@ class MobileDemoSeeder extends Seeder
         ]);
     }
 
-    private function createDemoUserByKey(string $key, int $shopId): User
+    private function createDemoUserByKey(string $key, ?int $shopId): User
     {
         $user = self::DEMO_USERS[$key];
 
@@ -535,7 +660,7 @@ class MobileDemoSeeder extends Seeder
     }
 
     /**
-     * @param  array<int, array<string, int|float|string>>  $products
+     * @param  array<int, array<string, int|float|string|null>>  $products
      * @return array<string, Product>
      */
     private function seedProducts(Shop $shop, User $creator, array $products): array
@@ -543,8 +668,17 @@ class MobileDemoSeeder extends Seeder
         $seededProducts = [];
 
         foreach ($products as $attributes) {
+            // Defaults so callers can omit columns they don't care about
+            // (`pricing_mode` etc. fall back to the migration defaults).
+            $payload = array_merge([
+                'pricing_mode' => 'fixed',
+                'markup_percent' => null,
+                'bulk_price' => null,
+                'bulk_threshold' => null,
+            ], $attributes);
+
             $product = Product::query()->create([
-                ...$attributes,
+                ...$payload,
                 'shop_id' => $shop->id,
                 'created_by' => $creator->id,
             ]);
@@ -590,7 +724,15 @@ class MobileDemoSeeder extends Seeder
     }
 
     /**
-     * @param  array<int, array<string, float|int>>  $items
+     * Items may be one of two shapes:
+     *   • Product line: ['product_id' => int, 'quantity' => float, 'price' => float, 'cost_price' => float]
+     *   • Service line: ['name' => string, 'unit' => string, 'quantity' => float, 'price' => float, 'cost_price' => float]
+     *
+     * Service-type sales must pass `type = 'service'`; their items leave
+     * `product_id` null and carry the human-readable `name` / `unit` on
+     * the sale_item row (see migration `update_sale_items_for_services`).
+     *
+     * @param  array<int, array<string, float|int|string|null>>  $items
      */
     private function createSale(
         int $shopId,
@@ -601,6 +743,7 @@ class MobileDemoSeeder extends Seeder
         string $paymentType,
         Carbon $createdAt,
         array $items,
+        string $type = 'product',
     ): Sale {
         $subTotal = collect($items)->sum(
             fn (array $item): float => (float) $item['quantity'] * (float) $item['price']
@@ -611,6 +754,7 @@ class MobileDemoSeeder extends Seeder
         $sale = Sale::query()->create([
             'shop_id' => $shopId,
             'user_id' => $userId,
+            'type' => $type,
             'customer_name' => $customerName,
             'discount' => $discount,
             'paid' => $paid,
@@ -625,10 +769,12 @@ class MobileDemoSeeder extends Seeder
             SaleItem::query()->create([
                 'shop_id' => $shopId,
                 'sale_id' => $sale->id,
-                'product_id' => $item['product_id'],
+                'product_id' => $item['product_id'] ?? null,
+                'name' => $item['name'] ?? null,
+                'unit' => $item['unit'] ?? null,
                 'quantity' => (float) $item['quantity'],
                 'price' => (float) $item['price'],
-                'cost_price' => (float) $item['cost_price'],
+                'cost_price' => (float) ($item['cost_price'] ?? 0),
                 'total' => (float) $item['quantity'] * (float) $item['price'],
                 'created_at' => $createdAt,
                 'updated_at' => $createdAt,
@@ -662,9 +808,16 @@ class MobileDemoSeeder extends Seeder
 
     /**
      * @param  array<int, array{type: string, amount: float, note: string, created_at: Carbon}>  $transactions
+     * @param  string  $direction  'receivable' (we lent money — default) or 'payable' (we owe money)
      */
-    private function createDebt(int $shopId, int $userId, string $personName, Carbon $createdAt, array $transactions): Debt
-    {
+    private function createDebt(
+        int $shopId,
+        int $userId,
+        string $personName,
+        Carbon $createdAt,
+        array $transactions,
+        string $direction = 'receivable',
+    ): Debt {
         $balance = collect($transactions)->sum(function (array $transaction): float {
             return $transaction['type'] === 'give'
                 ? $transaction['amount']
@@ -675,6 +828,7 @@ class MobileDemoSeeder extends Seeder
             'shop_id' => $shopId,
             'user_id' => $userId,
             'person_name' => $personName,
+            'direction' => $direction,
             'balance' => $balance,
             'created_at' => $createdAt,
             'updated_at' => Carbon::createFromTimestamp(max(array_map(

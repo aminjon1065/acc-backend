@@ -18,23 +18,36 @@ use Illuminate\Support\Facades\Hash;
 // Keep in sync — if seeded shop names, email domain, or password change,
 // update both sides together.
 const DEMO_ALPHA_SHOP = 'Сомон Маркет';
+const DEMO_ALPHA_SHOP_TWO = 'Сомон Маркет — Филиал';
 const DEMO_BETA_SHOP = 'Сугд Минимаркет';
 const DEMO_GAMMA_SHOP = 'Орзу Канцтовары';
+const DEMO_ALPHA_OWNER_EMAIL = 'farzona@ck.top';
 const DEMO_GAMMA_OWNER_EMAIL = 'mohira@ck.top';
 const DEMO_PASSWORD = 'Demo12345!';
 const DEMO_EMAIL_DOMAIN = '%@ck.top';
 const ADMIN_EMAIL = 'admin@ck.top';
 
+/**
+ * @return \Illuminate\Support\Collection<int, int>
+ */
+function demoShopIds(): \Illuminate\Support\Collection
+{
+    return Shop::query()
+        ->whereIn('name', [DEMO_ALPHA_SHOP, DEMO_ALPHA_SHOP_TWO, DEMO_BETA_SHOP, DEMO_GAMMA_SHOP])
+        ->pluck('id');
+}
+
 it('seeds mobile demo data for shops, users, operations, and reports', function () {
     $this->seed(MobileDemoSeeder::class);
 
     $shops = Shop::query()
-        ->whereIn('name', [DEMO_ALPHA_SHOP, DEMO_BETA_SHOP, DEMO_GAMMA_SHOP])
+        ->whereIn('name', [DEMO_ALPHA_SHOP, DEMO_ALPHA_SHOP_TWO, DEMO_BETA_SHOP, DEMO_GAMMA_SHOP])
         ->get()
         ->keyBy('name');
 
-    expect($shops)->toHaveCount(3);
+    expect($shops)->toHaveCount(4);
     expect($shops[DEMO_ALPHA_SHOP]->status)->toBe('active');
+    expect($shops[DEMO_ALPHA_SHOP_TWO]->status)->toBe('active');
     expect($shops[DEMO_BETA_SHOP]->status)->toBe('active');
     expect($shops[DEMO_GAMMA_SHOP]->status)->toBe('suspended');
 
@@ -49,18 +62,34 @@ it('seeds mobile demo data for shops, users, operations, and reports', function 
     expect($users)->toHaveCount(8);
     expect($users->where('role', UserRole::Owner)->count())->toBe(3);
     expect($users->where('role', UserRole::Seller)->count())->toBe(5);
-    expect($users->every(fn (User $user): bool => $user->shop_id !== null))->toBeTrue();
+    // Owners no longer carry a `users.shop_id` — ownership is expressed via
+    // `shops.owner_id`. Sellers still do.
+    expect($users->where('role', UserRole::Owner)->every(
+        fn (User $u): bool => $u->shop_id === null
+    ))->toBeTrue();
+    expect($users->where('role', UserRole::Seller)->every(
+        fn (User $u): bool => $u->shop_id !== null
+    ))->toBeTrue();
     expect($users->every(fn (User $user): bool => Hash::check(DEMO_PASSWORD, $user->password)))->toBeTrue();
+
+    // Multi-shop ownership: alpha owner owns BOTH alpha shops via shops.owner_id.
+    $alphaOwner = $users->firstWhere('email', DEMO_ALPHA_OWNER_EMAIL);
+    expect($alphaOwner)->not->toBeNull();
+    expect($alphaOwner->owned_shop_ids)->toHaveCount(2);
+    expect($alphaOwner->owned_shop_ids)->toEqualCanonicalizing([
+        $shops[DEMO_ALPHA_SHOP]->id,
+        $shops[DEMO_ALPHA_SHOP_TWO]->id,
+    ]);
 
     expect(Currency::query()->whereIn('code', ['TJS', 'USD', 'RUB'])->count())->toBe(3);
     expect(Currency::query()->where('code', 'TJS')->value('is_default'))->toBeTrue();
-    expect(ShopSetting::query()->whereIn('shop_id', $shops->pluck('id'))->count())->toBe(3);
+    expect(ShopSetting::query()->whereIn('shop_id', $shops->pluck('id'))->count())->toBe(4);
 
-    expect(Product::query()->whereIn('shop_id', $shops->pluck('id'))->count())->toBe(10);
-    expect(Purchase::query()->whereIn('shop_id', $shops->pluck('id'))->count())->toBe(5);
-    expect(Sale::query()->whereIn('shop_id', $shops->pluck('id'))->count())->toBe(7);
-    expect(Expense::query()->whereIn('shop_id', $shops->pluck('id'))->count())->toBe(7);
-    expect(Debt::query()->whereIn('shop_id', $shops->pluck('id'))->count())->toBe(4);
+    expect(Product::query()->whereIn('shop_id', $shops->pluck('id'))->count())->toBe(12);
+    expect(Purchase::query()->whereIn('shop_id', $shops->pluck('id'))->count())->toBe(6);
+    expect(Sale::query()->whereIn('shop_id', $shops->pluck('id'))->count())->toBe(9);
+    expect(Expense::query()->whereIn('shop_id', $shops->pluck('id'))->count())->toBe(8);
+    expect(Debt::query()->whereIn('shop_id', $shops->pluck('id'))->count())->toBe(5);
     expect(AuditLog::query()->whereIn('shop_id', $shops->pluck('id'))->count())->toBe(5);
 
     // ALPHA-POWDER-3KG is intentionally seeded below its low-stock threshold
@@ -73,22 +102,40 @@ it('seeds mobile demo data for shops, users, operations, and reports', function 
 
     $suspendedShopOwner = User::query()->where('email', DEMO_GAMMA_OWNER_EMAIL)->firstOrFail();
     expect($suspendedShopOwner->role)->toBe(UserRole::Owner);
+
+    // Coverage for new demo features ---------------------------------------
+
+    // Service-type sale exists with a sale_item that has no product_id.
+    $serviceSale = Sale::query()->where('type', 'service')->with('items')->first();
+    expect($serviceSale)->not->toBeNull();
+    expect($serviceSale->items)->toHaveCount(1);
+    expect($serviceSale->items[0]->product_id)->toBeNull();
+    expect($serviceSale->items[0]->name)->not->toBeEmpty();
+
+    // Payable debt exists — the bazaar overpayment / supplier-credit branch.
+    $payableDebt = Debt::query()->where('direction', 'payable')->first();
+    expect($payableDebt)->not->toBeNull();
+    expect((float) $payableDebt->balance)->toBeGreaterThan(0);
+
+    // Pricing-mode coverage: at least one markup product and one bulk product.
+    expect(Product::query()->where('pricing_mode', 'markup')->whereNotNull('markup_percent')->count())
+        ->toBeGreaterThanOrEqual(1);
+    expect(Product::query()->whereNotNull('bulk_price')->whereNotNull('bulk_threshold')->count())
+        ->toBeGreaterThanOrEqual(1);
 });
 
 it('reseeds mobile demo data without duplicating records', function () {
     $this->seed(MobileDemoSeeder::class);
     $this->seed(MobileDemoSeeder::class);
 
-    $shopIds = Shop::query()
-        ->whereIn('name', [DEMO_ALPHA_SHOP, DEMO_BETA_SHOP, DEMO_GAMMA_SHOP])
-        ->pluck('id');
+    $shopIds = demoShopIds();
 
     expect(User::query()->where('email', 'like', DEMO_EMAIL_DOMAIN)->where('email', '!=', ADMIN_EMAIL)->count())->toBe(8);
-    expect(Product::query()->whereIn('shop_id', $shopIds)->count())->toBe(10);
-    expect(Purchase::query()->whereIn('shop_id', $shopIds)->count())->toBe(5);
-    expect(Sale::query()->whereIn('shop_id', $shopIds)->count())->toBe(7);
-    expect(Expense::query()->whereIn('shop_id', $shopIds)->count())->toBe(7);
-    expect(Debt::query()->whereIn('shop_id', $shopIds)->count())->toBe(4);
+    expect(Product::query()->whereIn('shop_id', $shopIds)->count())->toBe(12);
+    expect(Purchase::query()->whereIn('shop_id', $shopIds)->count())->toBe(6);
+    expect(Sale::query()->whereIn('shop_id', $shopIds)->count())->toBe(9);
+    expect(Expense::query()->whereIn('shop_id', $shopIds)->count())->toBe(8);
+    expect(Debt::query()->whereIn('shop_id', $shopIds)->count())->toBe(5);
     expect(AuditLog::query()->whereIn('shop_id', $shopIds)->count())->toBe(5);
-    expect(ShopSetting::query()->whereIn('shop_id', $shopIds)->count())->toBe(3);
+    expect(ShopSetting::query()->whereIn('shop_id', $shopIds)->count())->toBe(4);
 });
