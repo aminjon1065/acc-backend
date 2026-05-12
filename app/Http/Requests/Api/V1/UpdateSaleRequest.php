@@ -21,15 +21,13 @@ class UpdateSaleRequest extends FormRequest
      */
     public function rules(): array
     {
-        $type = $this->input('type');
-        $isProductType = $type !== 'service';
-
         return [
             'shop_id' => ['nullable', 'integer', 'exists:shops,id'],
             'customer_name' => ['nullable', 'string', 'max:255'],
             'discount' => ['nullable', 'numeric', 'min:0'],
             'paid' => ['nullable', 'numeric', 'min:0'],
             'payment_type' => ['nullable', 'string', 'in:cash,card,transfer'],
+            // See StoreSaleRequest — `type` is server-derived from items.
             'type' => ['nullable', 'string', 'in:product,service'],
             'items' => ['nullable', 'array', 'min:1'],
             'items.*.product_id' => [
@@ -51,9 +49,8 @@ class UpdateSaleRequest extends FormRequest
                 function ($attribute, $value, $fail) {
                     $itemIndex = preg_replace('/[^0-9]/', '', $attribute);
                     $productId = $this->input("items.{$itemIndex}.product_id");
-                    $type = $this->input('type');
 
-                    if ($type === 'service' || $productId === null) {
+                    if ($productId === null) {
                         return;
                     }
 
@@ -71,6 +68,33 @@ class UpdateSaleRequest extends FormRequest
                 },
             ],
         ];
+    }
+
+    /**
+     * Cross-field check: a service line (no `product_id`) must carry a
+     * non-empty `name`. See StoreSaleRequest::withValidator for rationale.
+     */
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator): void {
+            $items = $this->input('items');
+            if (! is_array($items)) {
+                return;
+            }
+            foreach ($items as $i => $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+                $productId = $item['product_id'] ?? null;
+                $name = $item['name'] ?? null;
+                if ($productId === null && (! is_string($name) || trim($name) === '')) {
+                    $validator->errors()->add(
+                        "items.{$i}.name",
+                        'Укажите название услуги.',
+                    );
+                }
+            }
+        });
     }
 
     /**

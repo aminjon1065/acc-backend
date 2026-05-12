@@ -37,12 +37,22 @@ class SaleService
         ?string $notes,
         array $items
     ): Sale {
-        return DB::transaction(function () use ($actor, $shopId, $customerName, $type, $discount, $paid, $paymentType, $notes, $items): Sale {
+        return DB::transaction(function () use ($actor, $shopId, $customerName, $discount, $paid, $paymentType, $notes, $items): Sale {
+            // Derive `type` from the cart so a single sale can mix product
+            // lines with service lines (e.g. TV + installation). The caller-
+            // supplied `$type` is honoured only for service-only carts that
+            // explicitly tag themselves; the moment any item carries a
+            // `product_id`, we mark the whole sale as "product" so the UI
+            // groups it with stock-affecting transactions. Pure services
+            // stay tagged "service" so dashboards and the badge keep working.
+            $hasProduct = collect($items)->contains(fn ($i) => ! empty($i['product_id'] ?? null));
+            $derivedType = $hasProduct ? 'product' : 'service';
+
             $sale = $this->sales->create([
                 'shop_id' => $shopId,
                 'user_id' => $actor->id,
                 'customer_name' => $customerName,
-                'type' => $type,
+                'type' => $derivedType,
                 'discount' => $discount,
                 'paid' => $paid,
                 'debt' => 0,
@@ -64,7 +74,7 @@ class SaleService
 
             $subTotal = 0.0;
 
-            foreach ($items as $item) {
+            foreach ($items as $index => $item) {
                 $productId = $item['product_id'] ?? null;
                 $quantity = (float) $item['quantity'];
 
@@ -72,22 +82,27 @@ class SaleService
                     $product = $products->get($productId);
 
                     if (! $product) {
+                        // Use the per-item `items.{i}.product_id` key so the
+                        // mobile client's parser can identify which line
+                        // failed and evict the ghost from its local cache.
+                        // Hits when the product was hard-deleted or its
+                        // shop_id no longer matches the sale's target shop.
                         throw ValidationException::withMessages([
-                            'items' => ["Product #{$productId} not found. Sync products before creating sales with them."],
+                            "items.{$index}.product_id" => ['Товар не найден или относится к другому магазину. Обновите каталог и попробуйте снова.'],
                         ]);
                     }
 
-                    $price = $this->resolveProductPrice($product, $quantity, $item);
+                    $price = $this->resolveProductPrice($product, $quantity, $item, $index);
 
                     if ($actor->role === UserRole::Seller && $price < (float) $product->sale_price) {
                         throw ValidationException::withMessages([
-                            'items' => ["Price for {$product->name} cannot be below the listed sale price."],
+                            "items.{$index}.price" => ["Цена для \"{$product->name}\" не может быть ниже прайса."],
                         ]);
                     }
 
                     if ((float) $product->stock_quantity < $quantity) {
                         throw ValidationException::withMessages([
-                            'items' => ["Insufficient stock for product: {$product->name}"],
+                            "items.{$index}.quantity" => ["Недостаточно товара \"{$product->name}\" на складе (доступно {$product->stock_quantity})."],
                         ]);
                     }
 
@@ -139,7 +154,7 @@ class SaleService
 
             $this->auditLogger->log('sales.created', $actor, $freshSale, [
                 'customer_name' => $customerName,
-                'type' => $type,
+                'type' => $derivedType,
                 'items_count' => count($items),
                 'discount' => $discount,
                 'paid' => $paid,
@@ -201,7 +216,7 @@ class SaleService
                         ->keyBy('id')
                     : collect();
 
-                foreach ($items as $item) {
+                foreach ($items as $index => $item) {
                     $productId = $item['product_id'] ?? null;
                     $quantity = (float) ($item['quantity'] ?? 0);
 
@@ -209,18 +224,20 @@ class SaleService
                         $product = $products->get($productId);
 
                         if (! $product) {
+                            // See SaleService::createSale — same per-item key
+                            // contract so the mobile client can recover.
                             throw ValidationException::withMessages([
-                                'items' => ["Product #{$productId} not found. Sync products before updating sales with them."],
+                                "items.{$index}.product_id" => ['Товар не найден или относится к другому магазину. Обновите каталог и попробуйте снова.'],
                             ]);
                         }
 
                         if ((float) $product->stock_quantity < $quantity) {
                             throw ValidationException::withMessages([
-                                'items' => ["Insufficient stock for product: {$product->name}"],
+                                "items.{$index}.quantity" => ["Недостаточно товара \"{$product->name}\" на складе (доступно {$product->stock_quantity})."],
                             ]);
                         }
 
-                        $price = $this->resolveProductPrice($product, $quantity, $item);
+                        $price = $this->resolveProductPrice($product, $quantity, $item, $index);
                         $lineTotal = $quantity * $price;
                         $costPrice = (float) $product->cost_price;
 
@@ -272,6 +289,14 @@ class SaleService
             $total = max($subTotal - $discount, 0);
             $debt = max($total - $paid, 0);
 
+            // Re-derive `type` whenever the items collection changes — see
+            // createSale for the rationale. Editing a service-only sale into
+            // one that includes a product line should bump it out of the
+            // "service" bucket.
+            $derivedTypeUpdate = $itemsChanged
+                ? (collect($data['items'] ?? [])->contains(fn ($i) => ! empty($i['product_id'] ?? null)) ? 'product' : 'service')
+                : null;
+
             $sale->update([
                 'customer_name' => $customerName,
                 'discount' => $discount,
@@ -280,6 +305,7 @@ class SaleService
                 'total' => $total,
                 'payment_type' => $data['payment_type'] ?? $sale->payment_type,
                 'notes' => array_key_exists('notes', $data) ? $data['notes'] : $sale->notes,
+                ...($derivedTypeUpdate !== null ? ['type' => $derivedTypeUpdate] : []),
             ]);
             $sale->increment('version');
 
@@ -300,8 +326,13 @@ class SaleService
 
     /**
      * @param  array<string, mixed>  $item
+     * @param  int|string|null  $index  Item index in the request payload.
+     *                                  Used to attach validation errors
+     *                                  with `items.{i}.price` so the
+     *                                  mobile client's per-item parser
+     *                                  can map back to the cart row.
      */
-    private function resolveProductPrice(\App\Models\Product $product, float $quantity, array $item): float
+    private function resolveProductPrice(\App\Models\Product $product, float $quantity, array $item, int|string|null $index = null): float
     {
         if (array_key_exists('price', $item) && $item['price'] !== null) {
             return (float) $item['price'];
@@ -315,7 +346,7 @@ class SaleService
 
         return match ($product->pricing_mode) {
             PricingMode::Manual => throw ValidationException::withMessages([
-                'items' => ["Manual price is required for product: {$product->name}"],
+                ($index !== null ? "items.{$index}.price" : 'items') => ["Укажите цену для \"{$product->name}\" — у товара включён ручной ввод."],
             ]),
             PricingMode::Markup => $product->markup_percent !== null
                 ? round((float) $product->cost_price * (1 + ((float) $product->markup_percent / 100)), 2)
@@ -413,13 +444,13 @@ class SaleService
             $returnItemsData = [];
             $returnTotal = 0.0;
 
-            foreach ($items as $item) {
+            foreach ($items as $index => $item) {
                 $productId = $item['product_id'];
                 $quantity = (float) $item['quantity'];
 
                 if ($quantity <= 0) {
                     throw ValidationException::withMessages([
-                        'items' => ["Return quantity must be positive for product #{$productId}."],
+                        "items.{$index}.quantity" => ["Return quantity must be positive for product #{$productId}."],
                     ]);
                 }
 
@@ -432,14 +463,14 @@ class SaleService
                 $originalQty = $saleItemQuantities->get($productId);
                 if ($originalQty === null) {
                     throw ValidationException::withMessages([
-                        'items' => ["Product #{$productId} was not in the original sale."],
+                        "items.{$index}.product_id" => ["Product #{$productId} was not in the original sale."],
                     ]);
                 }
                 $alreadyReturned = (float) ($alreadyReturnedByProduct[$productId] ?? 0);
                 $remaining = $originalQty - $alreadyReturned;
                 if ($quantity > $remaining) {
                     throw ValidationException::withMessages([
-                        'items' => ["Cannot return {$quantity} of product #{$productId}: only {$remaining} of original {$originalQty} remain (already returned {$alreadyReturned})."],
+                        "items.{$index}.quantity" => ["Можно вернуть не более {$remaining} (уже возвращено {$alreadyReturned} из {$originalQty})."],
                     ]);
                 }
 

@@ -71,7 +71,8 @@ test('sale fails when product stock is insufficient', function () {
             ],
         ])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors('items');
+        // Per-item key contract — see SaleService::createSale.
+        ->assertJsonValidationErrors('items.0.quantity');
 
     expect((float) $product->fresh()->stock_quantity)->toBe(1.0);
 });
@@ -99,7 +100,8 @@ test('owner cannot create sale with product from another shop', function () {
             ],
         ])
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['items']);
+        // Mobile parses `items.{i}.product_id` to evict the ghost line.
+        ->assertJsonValidationErrors('items.0.product_id');
 });
 
 test('sale calculates bulk pricing automatically when threshold is met and no explicit price is sent', function () {
@@ -176,7 +178,8 @@ test('sale requires explicit price for manual pricing mode', function () {
             ],
         ])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors('items');
+        // Per-item key — see SaleService::resolveProductPrice.
+        ->assertJsonValidationErrors('items.0.price');
 });
 
 test('service sale persists metadata and service item naming', function () {
@@ -476,7 +479,7 @@ test('return restocks once and rejects further returns beyond original quantity'
             ],
         ])
         ->assertUnprocessable()
-        ->assertJsonValidationErrors(['items']);
+        ->assertJsonValidationErrors(['items.0.quantity']);
 
     expect((float) $product->fresh()->stock_quantity)->toBe(10.0);
 });
@@ -567,4 +570,66 @@ test('return rejects non-positive quantities', function () {
             'items' => [['product_id' => $product->id, 'quantity' => 0]],
         ])
         ->assertUnprocessable();
+});
+
+test('sale accepts a mixed cart of products and services in one transaction', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'stock_quantity' => 10,
+        'cost_price' => 4,
+        'sale_price' => 100,
+    ]);
+
+    $response = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'paid' => 250,
+            'payment_type' => 'cash',
+            'items' => [
+                // Real product line — counts toward stock + cost.
+                ['product_id' => $product->id, 'quantity' => 1, 'price' => 100],
+                // Service line — no product_id, name is the service label.
+                ['name' => 'Доставка и установка', 'quantity' => 1, 'price' => 150, 'unit' => 'услуга'],
+            ],
+        ])
+        ->assertSuccessful()
+        // A cart with any product line is tagged "product" so the sale
+        // shows up in stock-affecting reports / the dashboard.
+        ->assertJsonPath('data.type', 'product')
+        ->assertJsonPath('data.total', 250)
+        ->assertJsonPath('data.debt', 0);
+
+    expect((float) $product->fresh()->stock_quantity)->toBe(9.0);
+
+    $items = collect($response->json('data.items'));
+    expect($items)->toHaveCount(2);
+    expect($items->firstWhere('product_id', $product->id))->not->toBeNull();
+    $serviceLine = $items->first(fn ($i) => $i['product_id'] === null);
+    expect($serviceLine)->not->toBeNull();
+    expect($serviceLine['service_name'])->toBe('Доставка и установка');
+    expect((float) $serviceLine['total'])->toBe(150.0);
+});
+
+test('sale rejects a service line without a name', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+
+    $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'paid' => 100,
+            'payment_type' => 'cash',
+            'items' => [
+                // Service line without name — should be rejected.
+                ['quantity' => 1, 'price' => 100],
+            ],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('items.0.name');
 });

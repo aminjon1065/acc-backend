@@ -3,7 +3,6 @@
 namespace App\Http\Requests\Api\V1;
 
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class StoreSaleRequest extends FormRequest
 {
@@ -22,9 +21,6 @@ class StoreSaleRequest extends FormRequest
      */
     public function rules(): array
     {
-        $type = $this->input('type');
-        $isProductType = $type !== 'service';
-
         return [
             'id' => ['nullable', 'string', 'max:36'],
             'shop_id' => ['nullable', 'integer', 'exists:shops,id'],
@@ -32,13 +28,16 @@ class StoreSaleRequest extends FormRequest
             'discount' => ['nullable', 'numeric', 'min:0'],
             'paid' => ['nullable', 'numeric', 'min:0'],
             'payment_type' => ['nullable', 'string', 'in:cash,card,transfer'],
+            // `type` is kept for backward-compat but the server now derives it
+            // from the items themselves: any product line ⇒ "product", else
+            // "service". A single sale can mix both kinds (e.g. TV + setup),
+            // see StoreSaleRequest::messages for the per-item contract.
             'type' => ['nullable', 'string', 'in:product,service'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => [
                 'nullable',
                 'string',
                 'exists:products,id',
-                Rule::requiredIf($isProductType),
             ],
             'items.*.name' => [
                 'nullable',
@@ -54,9 +53,10 @@ class StoreSaleRequest extends FormRequest
                 function ($attribute, $value, $fail) {
                     $itemIndex = preg_replace('/[^0-9]/', '', $attribute);
                     $productId = $this->input("items.{$itemIndex}.product_id");
-                    $type = $this->input('type');
 
-                    if ($type === 'service' || $productId === null) {
+                    // Service line — price is the user-typed labour rate; we
+                    // only require it to be non-negative (handled by `min:0`).
+                    if ($productId === null) {
                         return;
                     }
 
@@ -74,6 +74,36 @@ class StoreSaleRequest extends FormRequest
                 },
             ],
         ];
+    }
+
+    /**
+     * Cross-field check: a service line (no `product_id`) must carry a
+     * non-empty `name`. Putting this in `withValidator` (rather than as a
+     * closure on `items.*.name`) guarantees the check runs even when the
+     * client omits the `name` key entirely — the per-field closure is
+     * skipped by Laravel for missing nullable fields.
+     */
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator): void {
+            $items = $this->input('items', []);
+            if (! is_array($items)) {
+                return;
+            }
+            foreach ($items as $i => $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+                $productId = $item['product_id'] ?? null;
+                $name = $item['name'] ?? null;
+                if ($productId === null && (! is_string($name) || trim($name) === '')) {
+                    $validator->errors()->add(
+                        "items.{$i}.name",
+                        'Укажите название услуги.',
+                    );
+                }
+            }
+        });
     }
 
     /**
