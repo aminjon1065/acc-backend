@@ -55,6 +55,39 @@ test('owner can only see own shop and cannot create new shops', function () {
         ->assertForbidden();
 });
 
+test('shop owner_name resolves from FK relation when owner assigned', function () {
+    $admin = User::factory()->create([
+        'role' => UserRole::SuperAdmin->value,
+        'shop_id' => null,
+    ]);
+    $assignedOwner = User::factory()->create([
+        'role' => UserRole::Owner->value,
+        'name' => 'Assigned Owner',
+    ]);
+    $shop = Shop::factory()->create([
+        'owner_id' => null,
+        'owner_name' => 'Legacy Text Label',
+    ]);
+
+    $this->actingAs($admin, 'sanctum')
+        ->getJson('/api/v1/shops/'.$shop->id)
+        ->assertSuccessful()
+        ->assertJsonPath('data.owner_name', 'Legacy Text Label');
+
+    $this->actingAs($admin, 'sanctum')
+        ->patchJson('/api/v1/shops/'.$shop->id, [
+            'owner_id' => $assignedOwner->id,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.owner_id', $assignedOwner->id)
+        ->assertJsonPath('data.owner_name', 'Assigned Owner');
+
+    $this->actingAs($admin, 'sanctum')
+        ->getJson('/api/v1/shops/'.$shop->id)
+        ->assertSuccessful()
+        ->assertJsonPath('data.owner_name', 'Assigned Owner');
+});
+
 test('shops ids endpoint returns id+updated_at scoped to actor', function () {
     $owner = \App\Models\User::factory()->create(['role' => \App\UserRole::Owner->value]);
     $owned = \App\Models\Shop::factory()->create(['owner_id' => $owner->id]);

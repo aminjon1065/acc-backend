@@ -23,7 +23,9 @@ class ShopController extends Controller
     {
         $this->authorize('viewAny', Shop::class);
 
-        $shops = Shop::query();
+        // Eager-load `owner` so ShopResource can resolve `owner_name` from
+        // the FK relationship without N+1 queries on a paginated list.
+        $shops = Shop::query()->with('owner');
 
         $accessibleShopIds = $request->user()->accessibleShopIds();
         if ($accessibleShopIds !== null) {
@@ -91,6 +93,8 @@ class ShopController extends Controller
             'status' => $request->input('status', 'active'),
         ]);
 
+        $shop->loadMissing('owner');
+
         return new ShopResource($shop);
     }
 
@@ -100,6 +104,8 @@ class ShopController extends Controller
     public function show(Request $request, Shop $shop): ShopResource
     {
         $this->authorize('view', $shop);
+
+        $shop->loadMissing('owner');
 
         return new ShopResource($shop);
     }
@@ -118,6 +124,10 @@ class ShopController extends Controller
 
         $shop->fill($payload);
         $shop->save();
+
+        // owner_id may have changed in this request; reload the relation so
+        // the response reflects the new owner's name.
+        $shop->load('owner');
 
         return new ShopResource($shop);
     }

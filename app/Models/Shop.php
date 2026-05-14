@@ -28,6 +28,28 @@ class Shop extends Model
     ];
 
     /**
+     * Keep `owner_name` in lockstep with the assigned owner's name. The text
+     * column is preserved as a denormalized cache so DB-direct viewers
+     * (TablePlus, SQL reports, exports) see a human-readable owner without
+     * joining `users`. The API still resolves through the FK at read time,
+     * which covers the edge case where the linked user is later renamed.
+     *
+     * Setting `owner_id` to null preserves the existing `owner_name` so the
+     * legacy free-form label is not silently lost on unassign.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (Shop $shop): void {
+            if ($shop->isDirty('owner_id') && $shop->owner_id !== null) {
+                $owner = User::query()->find($shop->owner_id);
+                if ($owner !== null) {
+                    $shop->owner_name = $owner->name;
+                }
+            }
+        });
+    }
+
+    /**
      * The owning user. NULL means the shop has been created but not yet
      * assigned to an owner — admin assigns via `owner_id` on edit. The
      * legacy `owner_name` text column stays for display when an owner
