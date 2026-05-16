@@ -193,14 +193,22 @@ class ReportController extends Controller
 
             $totalProducts = (int) (clone $products)->count();
             $totalStockQuantity = (float) (clone $products)->sum('stock_quantity');
-            $totalValue = (float) (clone $products)->selectRaw('COALESCE(SUM(stock_quantity * sale_price), 0) as total_value')->value('total_value');
+            $totalValue = (float) (clone $products)
+                ->selectRaw('COALESCE(SUM(stock_quantity * sale_price), 0) as total_value')
+                ->value('total_value');
+            // Cost-side total: what the inventory cost to acquire. Kept
+            // separate from `total_value` (which is sale-priced) so the
+            // PDF/report UI can show both sides.
+            $totalCostValue = (float) (clone $products)
+                ->selectRaw('COALESCE(SUM(stock_quantity * cost_price), 0) as total_cost_value')
+                ->value('total_cost_value');
             $lowStockCount = (int) (clone $products)
                 ->where('stock_quantity', '>', 0)
                 ->whereColumn('stock_quantity', '<=', 'low_stock_alert')
                 ->count();
             $outOfStockCount = (int) (clone $products)->where('stock_quantity', '<=', 0)->count();
             $productRows = (clone $products)
-                ->select(['id', 'name', 'stock_quantity', 'sale_price'])
+                ->select(['id', 'name', 'stock_quantity', 'sale_price', 'cost_price'])
                 ->orderByRaw('(stock_quantity * sale_price) desc')
                 ->get()
                 ->map(fn (Product $product) => [
@@ -208,7 +216,9 @@ class ReportController extends Controller
                     'name' => $product->name,
                     'stock_quantity' => (float) $product->stock_quantity,
                     'sale_price' => (float) $product->sale_price,
+                    'cost_price' => (float) $product->cost_price,
                     'value' => (float) $product->stock_quantity * (float) $product->sale_price,
+                    'cost_value' => (float) $product->stock_quantity * (float) $product->cost_price,
                 ])
                 ->values()
                 ->all();
@@ -216,6 +226,7 @@ class ReportController extends Controller
             return [
                 'total_products' => $totalProducts,
                 'total_value' => $totalValue,
+                'total_cost_value' => $totalCostValue,
                 'low_stock' => $lowStockCount,
                 'out_of_stock' => $outOfStockCount,
                 'data' => $productRows,

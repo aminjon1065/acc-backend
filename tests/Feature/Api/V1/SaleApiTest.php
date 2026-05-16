@@ -633,3 +633,143 @@ test('sale rejects a service line without a name', function () {
         ->assertUnprocessable()
         ->assertJsonValidationErrors('items.0.name');
 });
+
+test('sales list supports search by customer name, notes, and seller name', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+        'name' => 'Owner Olivia',
+    ]);
+    $seller = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Seller->value,
+        'name' => 'Cashier Carlos',
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'stock_quantity' => 50,
+        'cost_price' => 4,
+        'sale_price' => 10,
+    ]);
+
+    $matching = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'customer_name' => 'Vasya Pupkin',
+            'paid' => 10,
+            'payment_type' => 'cash',
+            'items' => [['product_id' => $product->id, 'quantity' => 1, 'price' => 10]],
+        ])
+        ->assertSuccessful()
+        ->json('data.id');
+
+    $note = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'paid' => 10,
+            'payment_type' => 'cash',
+            'notes' => 'Холодильник со склада',
+            'items' => [['product_id' => $product->id, 'quantity' => 1, 'price' => 10]],
+        ])
+        ->assertSuccessful()
+        ->json('data.id');
+
+    $sellerSale = $this->actingAs($seller, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'paid' => 10,
+            'payment_type' => 'cash',
+            'items' => [['product_id' => $product->id, 'quantity' => 1, 'price' => 10]],
+        ])
+        ->assertSuccessful()
+        ->json('data.id');
+
+    // Other sale that should NOT match any of the three queries.
+    $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'paid' => 10,
+            'payment_type' => 'cash',
+            'items' => [['product_id' => $product->id, 'quantity' => 1, 'price' => 10]],
+        ])
+        ->assertSuccessful();
+
+    $byCustomer = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/sales?search=Vasya')
+        ->assertSuccessful()
+        ->json('data');
+    expect(collect($byCustomer)->pluck('id')->all())->toEqual([$matching]);
+
+    $byNote = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/sales?search='.urlencode('Холодильник'))
+        ->assertSuccessful()
+        ->json('data');
+    expect(collect($byNote)->pluck('id')->all())->toEqual([$note]);
+
+    $bySeller = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/sales?search=Carlos')
+        ->assertSuccessful()
+        ->json('data');
+    expect(collect($bySeller)->pluck('id')->all())->toEqual([$sellerSale]);
+});
+
+test('sales list filters by payment type, sale type, and debt-only flag', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'stock_quantity' => 100,
+        'cost_price' => 4,
+        'sale_price' => 10,
+    ]);
+
+    // Mix of payment types, types, and debt presence.
+    $cashFull = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'paid' => 10,
+            'payment_type' => 'cash',
+            'items' => [['product_id' => $product->id, 'quantity' => 1, 'price' => 10]],
+        ])->json('data.id');
+
+    $cardDebt = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'paid' => 4,
+            'payment_type' => 'card',
+            'items' => [['product_id' => $product->id, 'quantity' => 1, 'price' => 10]],
+        ])->json('data.id');
+
+    $service = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'paid' => 20,
+            'payment_type' => 'transfer',
+            'items' => [['name' => 'Доставка', 'quantity' => 1, 'price' => 20, 'unit' => 'усл.']],
+        ])->json('data.id');
+
+    // payment_type filter
+    $cards = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/sales?payment_type=card')
+        ->assertSuccessful()
+        ->json('data');
+    expect(collect($cards)->pluck('id')->all())->toEqual([$cardDebt]);
+
+    // type filter
+    $services = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/sales?type=service')
+        ->assertSuccessful()
+        ->json('data');
+    expect(collect($services)->pluck('id')->all())->toEqual([$service]);
+
+    // debt_only filter
+    $withDebt = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/sales?debt_only=1')
+        ->assertSuccessful()
+        ->json('data');
+    expect(collect($withDebt)->pluck('id')->all())->toEqual([$cardDebt]);
+
+    // Combined: cash + product type — only cashFull should remain.
+    $combined = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/sales?payment_type=cash&type=product')
+        ->assertSuccessful()
+        ->json('data');
+    expect(collect($combined)->pluck('id')->all())->toEqual([$cashFull]);
+});

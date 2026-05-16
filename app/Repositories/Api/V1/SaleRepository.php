@@ -95,6 +95,34 @@ class SaleRepository
         $query = $this->queryForUser($user);
 
         if ($request !== null) {
+            $search = trim((string) $request->input('search', ''));
+            if ($search !== '') {
+                // Sale ids are UUID strings, so a partial-id search rarely
+                // helps. Match on customer_name, notes, and the seller's
+                // display name instead — the common "find Vasya's sale"
+                // case.
+                $like = '%'.$search.'%';
+                $query->where(function (Builder $q) use ($like): void {
+                    $q->where('customer_name', 'like', $like)
+                        ->orWhere('notes', 'like', $like)
+                        ->orWhereHas('user', fn (Builder $u) => $u->where('name', 'like', $like));
+                });
+            }
+
+            $paymentType = trim((string) $request->input('payment_type', ''));
+            if ($paymentType !== '') {
+                $query->where('payment_type', $paymentType);
+            }
+
+            $type = trim((string) $request->input('type', ''));
+            if ($type !== '') {
+                $query->where('type', $type);
+            }
+
+            if ($request->boolean('debt_only')) {
+                $query->where('debt', '>', 0);
+            }
+
             // Composite cursor: stable across insertions, no duplicates.
             if ($request->filled('cursor')) {
                 $decoded = json_decode(base64_decode($request->input('cursor')), true);

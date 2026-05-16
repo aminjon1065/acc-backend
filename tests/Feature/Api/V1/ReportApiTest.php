@@ -115,3 +115,31 @@ test('owner report is scoped to own shop', function () {
         ->assertSuccessful()
         ->assertJsonPath('data.sales_total', 100);
 });
+
+test('stock report exposes cost_price, sale_price, and both totals per row', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'stock_quantity' => 4,
+        'cost_price' => 30,
+        'sale_price' => 50,
+    ]);
+
+    $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/reports/stock')
+        ->assertSuccessful()
+        // sale-priced totals
+        ->assertJsonPath('data.total_value', 200)
+        ->assertJsonPath('data.data.0.id', $product->id)
+        ->assertJsonPath('data.data.0.stock_quantity', 4)
+        ->assertJsonPath('data.data.0.sale_price', 50)
+        ->assertJsonPath('data.data.0.value', 200)
+        // cost-priced totals (new)
+        ->assertJsonPath('data.total_cost_value', 120)
+        ->assertJsonPath('data.data.0.cost_price', 30)
+        ->assertJsonPath('data.data.0.cost_value', 120);
+});
