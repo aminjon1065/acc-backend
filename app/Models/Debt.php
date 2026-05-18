@@ -29,6 +29,7 @@ class Debt extends Model
         'user_id',
         'person_name',
         'direction',
+        'original_direction',
         'balance',
         'version',
     ];
@@ -40,6 +41,7 @@ class Debt extends Model
     {
         return [
             'direction' => DebtDirection::class,
+            'original_direction' => DebtDirection::class,
             'balance' => 'decimal:2',
             'version' => 'integer',
         ];

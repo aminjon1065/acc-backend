@@ -198,3 +198,128 @@ test('overpayment in payable direction flips back to receivable', function () {
         ->assertJsonPath('data.balance', 500)
         ->assertJsonPath('data.direction', 'receivable');
 });
+
+test('seller can edit own transaction amount and balance recomputes', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $seller = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Seller->value,
+    ]);
+
+    $createResponse = $this->actingAs($seller, 'sanctum')
+        ->postJson('/api/v1/debts', [
+            'person_name' => 'Client',
+            'opening_balance' => 100,
+        ])
+        ->assertSuccessful();
+    $debtId = $createResponse->json('data.id');
+    $txId = $createResponse->json('data.transactions.0.id');
+
+    // Fix the opening: should have been 1000 not 100.
+    $this->actingAs($seller, 'sanctum')
+        ->patchJson("/api/v1/debts/{$debtId}/transactions/{$txId}", [
+            'type' => 'give',
+            'amount' => 1000,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.balance', 1000)
+        ->assertJsonPath('data.direction', 'receivable');
+
+    // Owner from same shop can also edit any tx — sanity check.
+    $this->actingAs($owner, 'sanctum')
+        ->patchJson("/api/v1/debts/{$debtId}/transactions/{$txId}", [
+            'type' => 'give',
+            'amount' => 500,
+            'note' => 'Corrected by manager',
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.balance', 500);
+});
+
+test('seller cannot edit transactions on someone else\'s debt', function () {
+    $shop = Shop::factory()->create();
+    $sellerA = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Seller->value,
+    ]);
+    $sellerB = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Seller->value,
+    ]);
+
+    $createResponse = $this->actingAs($sellerA, 'sanctum')
+        ->postJson('/api/v1/debts', [
+            'person_name' => 'A debt',
+            'opening_balance' => 100,
+        ])
+        ->assertSuccessful();
+    $debtId = $createResponse->json('data.id');
+    $txId = $createResponse->json('data.transactions.0.id');
+
+    $this->actingAs($sellerB, 'sanctum')
+        ->patchJson("/api/v1/debts/{$debtId}/transactions/{$txId}", [
+            'type' => 'give',
+            'amount' => 999,
+        ])
+        ->assertForbidden();
+});
+
+test('deleting all transactions zeroes the debt balance', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+
+    $createResponse = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/debts', [
+            'person_name' => 'Test',
+            'opening_balance' => 200,
+        ])
+        ->assertSuccessful();
+    $debtId = $createResponse->json('data.id');
+    $txId = $createResponse->json('data.transactions.0.id');
+
+    $this->actingAs($owner, 'sanctum')
+        ->deleteJson("/api/v1/debts/{$debtId}/transactions/{$txId}")
+        ->assertSuccessful()
+        ->assertJsonPath('data.balance', 0)
+        ->assertJsonPath('data.transactions', []);
+});
+
+test('editing tx type from give to repay flips direction on overpay', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+
+    // Receivable debt with opening 100.
+    $createResponse = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/debts', [
+            'person_name' => 'Counterparty',
+            'opening_balance' => 100,
+            'direction' => 'receivable',
+        ])
+        ->assertSuccessful();
+    $debtId = $createResponse->json('data.id');
+
+    // Add a "we paid them 300" tx.
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/debts/{$debtId}/transactions", [
+            'type' => 'repay',
+            'amount' => 300,
+        ])
+        ->assertSuccessful();
+
+    // Sum = 100 (give) - 300 (repay) = -200 → flip to payable, balance 200.
+    $check = $this->actingAs($owner, 'sanctum')
+        ->getJson("/api/v1/debts/{$debtId}")
+        ->json('data');
+    expect((float) $check['balance'])->toBe(200.0);
+    expect($check['direction'])->toBe('payable');
+});

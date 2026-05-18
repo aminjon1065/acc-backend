@@ -4,6 +4,7 @@ namespace App\Services\Api\V1;
 
 use App\Enums\DebtDirection;
 use App\Models\Debt;
+use App\Models\DebtTransaction;
 use App\Models\User;
 use App\Repositories\Api\V1\DebtRepository;
 use App\Services\AuditLogger;
@@ -25,6 +26,10 @@ class DebtService
                 'user_id' => $actor->id,
                 'person_name' => $personName,
                 'direction' => $direction,
+                // Immutable record of the operator's original choice.
+                // `direction` may flip on overpayment; `original_direction`
+                // stays as the seed for recomputeDebt during edits.
+                'original_direction' => $direction,
                 'balance' => $openingBalance,
             ];
 
@@ -157,6 +162,132 @@ class DebtService
 
             return $debt->fresh(['user:id,name', 'transactions.user:id,name']);
         });
+    }
+
+    /**
+     * Edit one of a debt's existing transactions. Walks the full
+     * transaction history afterwards to recompute balance + direction
+     * — see recomputeDebt for the math.
+     */
+    public function updateDebtTransaction(
+        Debt $debt,
+        DebtTransaction $transaction,
+        User $actor,
+        string $type,
+        float $amount,
+        ?string $note,
+    ): Debt {
+        return DB::transaction(function () use ($debt, $transaction, $actor, $type, $amount, $note): Debt {
+            $before = [
+                'type' => $transaction->type,
+                'amount' => (float) $transaction->amount,
+                'note' => $transaction->note,
+            ];
+
+            $transaction->update([
+                'type' => $type,
+                'amount' => $amount,
+                'note' => $note,
+            ]);
+
+            $this->recomputeDebt($debt);
+            $debt->increment('version');
+
+            $fresh = $debt->fresh(['user:id,name', 'transactions.user:id,name']);
+
+            $this->auditLogger->log('debt_transactions.updated', $actor, $fresh, [
+                'transaction_id' => $transaction->id,
+                'before' => $before,
+                'after' => ['type' => $type, 'amount' => $amount, 'note' => $note],
+                'balance' => (float) $fresh->balance,
+                'direction' => $fresh->direction?->value,
+            ], (int) $debt->shop_id);
+
+            $this->dashboardCacheVersion->bumpShop((int) $debt->shop_id);
+
+            return $fresh;
+        });
+    }
+
+    /**
+     * Delete one transaction from a debt's history and recompute the
+     * parent balance / direction. Opening transactions can be deleted
+     * just like any other — recomputeDebt handles the resulting state.
+     */
+    public function deleteDebtTransaction(
+        Debt $debt,
+        DebtTransaction $transaction,
+        User $actor,
+    ): Debt {
+        return DB::transaction(function () use ($debt, $transaction, $actor): Debt {
+            $snapshot = [
+                'transaction_id' => $transaction->id,
+                'type' => $transaction->type,
+                'amount' => (float) $transaction->amount,
+                'note' => $transaction->note,
+            ];
+
+            $transaction->delete();
+
+            $this->recomputeDebt($debt);
+            $debt->increment('version');
+
+            $fresh = $debt->fresh(['user:id,name', 'transactions.user:id,name']);
+
+            $this->auditLogger->log('debt_transactions.deleted', $actor, $fresh, [
+                ...$snapshot,
+                'balance' => (float) $fresh->balance,
+                'direction' => $fresh->direction?->value,
+            ], (int) $debt->shop_id);
+
+            $this->dashboardCacheVersion->bumpShop((int) $debt->shop_id);
+
+            return $fresh;
+        });
+    }
+
+    /**
+     * Recompute Debt.balance and Debt.direction from the transaction
+     * history. Used after editing or deleting individual transactions.
+     *
+     * Algorithm: walk transactions in chronological order, applying
+     * delta = +amount for `give`, −amount for `take`/`repay`. The
+     * resulting signed sum is interpreted against `original_direction`
+     * — positive sums stay in the original direction; a negative sum
+     * means the debt has flipped (overpayment / overcollection) so the
+     * sign is normalised and `direction` is set to the opposite of the
+     * original.
+     */
+    private function recomputeDebt(Debt $debt): void
+    {
+        $signedSum = 0.0;
+        foreach ($debt->transactions()->orderBy('created_at')->orderBy('id')->get() as $tx) {
+            // `type` may be cast as an enum (DebtTransactionType) — unwrap
+            // via `->value` so the match works on raw strings.
+            $typeValue = $tx->type instanceof \BackedEnum ? $tx->type->value : (string) $tx->type;
+            $delta = match ($typeValue) {
+                'give' => (float) $tx->amount,
+                'take', 'repay' => -(float) $tx->amount,
+                default => 0.0,
+            };
+            $signedSum += $delta;
+        }
+
+        $original = $debt->original_direction ?? $debt->direction;
+        if ($signedSum >= 0) {
+            $newBalance = $signedSum;
+            $newDirection = $original;
+        } else {
+            $newBalance = abs($signedSum);
+            $newDirection = $original === DebtDirection::Receivable
+                ? DebtDirection::Payable
+                : DebtDirection::Receivable;
+        }
+
+        $debt->update([
+            'balance' => $newBalance,
+            'direction' => $newDirection,
+        ]);
     }
 
     public function deleteDebt(Debt $debt, User $actor): void

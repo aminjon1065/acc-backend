@@ -21,11 +21,15 @@ final class ApiPermissionMatrix
             'delete' => ['super_admin', 'owner'],
         ],
         'expenses' => [
-            'viewAny' => ['super_admin', 'owner'],
-            'view' => ['super_admin', 'owner'],
-            'create' => ['super_admin', 'owner'],
-            'update' => ['super_admin', 'owner'],
-            'delete' => ['super_admin', 'owner'],
+            // Sellers fully manage their own expenses — view, create,
+            // edit, delete. Cross-seller visibility / mutation is
+            // blocked at the policy + repository layer (own-row filter
+            // on user_id), so a seller can never touch someone else's row.
+            'viewAny' => ['super_admin', 'owner', 'seller'],
+            'view' => ['super_admin', 'owner', 'seller'],
+            'create' => ['super_admin', 'owner', 'seller'],
+            'update' => ['super_admin', 'owner', 'seller'],
+            'delete' => ['super_admin', 'owner', 'seller'],
         ],
         'currencies' => [
             'viewAny' => ['super_admin', 'owner', 'seller'],

@@ -57,6 +57,8 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('debts/{debt}', [DebtController::class, 'destroy'])->middleware('api_ability:debts,delete');
         Route::post('debts/{debt}/transactions', [DebtController::class, 'storeTransaction'])->middleware(['api_ability:debts,update', 'throttle:mobile-writes', 'idempotent']);
         Route::get('debts/{debt}/transactions', [DebtController::class, 'transactions'])->middleware('api_ability:debts,view');
+        Route::match(['put', 'patch'], 'debts/{debt}/transactions/{transaction}', [DebtController::class, 'updateTransaction'])->middleware(['api_ability:debts,update', 'idempotent']);
+        Route::delete('debts/{debt}/transactions/{transaction}', [DebtController::class, 'destroyTransaction'])->middleware(['api_ability:debts,update']);
 
         Route::get('purchases', [PurchaseController::class, 'index'])->middleware('api_ability:purchases,viewAny');
         Route::post('purchases', [PurchaseController::class, 'store'])->middleware(['api_ability:purchases,create', 'throttle:mobile-writes', 'idempotent']);

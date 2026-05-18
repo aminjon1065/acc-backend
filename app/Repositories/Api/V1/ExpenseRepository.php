@@ -4,6 +4,7 @@ namespace App\Repositories\Api\V1;
 
 use App\Models\Expense;
 use App\Models\User;
+use App\UserRole;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -16,6 +17,15 @@ class ExpenseRepository
     public function queryForUser(User $user): Builder
     {
         $query = Expense::query();
+
+        // Sellers see only the expenses they personally recorded — same
+        // pattern as SaleRepository. Owners / super_admin see everything
+        // within their accessible shops.
+        if ($user->role === UserRole::Seller) {
+            $query->where('user_id', $user->id);
+
+            return $query;
+        }
 
         $accessibleShopIds = $user->accessibleShopIds();
         if ($accessibleShopIds !== null) {
