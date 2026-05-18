@@ -937,3 +937,77 @@ test('stock report without dates returns snapshot mode', function () {
     expect($report['mode'])->toBe('snapshot');
     expect((float) $report['stock_quantity_total'])->toBe(50.0);
 });
+
+test('seller report shows only their own sales and expenses', function () {
+    $shop = \App\Models\Shop::factory()->create();
+    $sellerA = \App\Models\User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => \App\UserRole::Seller->value,
+    ]);
+    $sellerB = \App\Models\User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => \App\UserRole::Seller->value,
+    ]);
+    $product = \App\Models\Product::factory()->create([
+        'shop_id' => $shop->id,
+        'stock_quantity' => 100,
+        'cost_price' => 10,
+        'sale_price' => 50,
+    ]);
+
+    // Seller A sells 2 units; Seller B sells 5.
+    $this->actingAs($sellerA, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+        ])
+        ->assertSuccessful();
+    $this->actingAs($sellerB, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'items' => [['product_id' => $product->id, 'quantity' => 5]],
+        ])
+        ->assertSuccessful();
+
+    // Seller A records an expense; Seller B records another.
+    $this->actingAs($sellerA, 'sanctum')
+        ->postJson('/api/v1/expenses', [
+            'name' => 'A expense',
+            'quantity' => 1,
+            'price' => 30,
+        ])
+        ->assertSuccessful();
+    $this->actingAs($sellerB, 'sanctum')
+        ->postJson('/api/v1/expenses', [
+            'name' => 'B expense',
+            'quantity' => 1,
+            'price' => 70,
+        ])
+        ->assertSuccessful();
+
+    $today = now()->toDateString();
+
+    // Sales report for seller A: only their 2 × 50 = 100.
+    $salesA = $this->actingAs($sellerA, 'sanctum')
+        ->getJson("/api/v1/reports/sales?date_from={$today}&date_to={$today}")
+        ->assertSuccessful()
+        ->json('data');
+    expect((float) $salesA['total_amount'])->toBe(100.0);
+    expect((int) $salesA['total_sales'])->toBe(1);
+
+    // Profit report for seller A: revenue 100 − COGS 20 − expenses 30 = 50.
+    $profitA = $this->actingAs($sellerA, 'sanctum')
+        ->getJson("/api/v1/reports/profit?date_from={$today}&date_to={$today}")
+        ->assertSuccessful()
+        ->json('data');
+    expect((float) $profitA['total_sales'])->toBe(100.0);
+    expect((float) $profitA['cost_of_goods_sold'])->toBe(20.0);
+    expect((float) $profitA['expenses_total'])->toBe(30.0);
+    expect((float) $profitA['profit'])->toBe(50.0);
+
+    // Expenses report for seller A: only A expense.
+    $expensesA = $this->actingAs($sellerA, 'sanctum')
+        ->getJson("/api/v1/reports/expenses?date_from={$today}&date_to={$today}")
+        ->assertSuccessful()
+        ->json('data');
+    expect((float) $expensesA['total_amount'])->toBe(30.0);
+    expect((int) $expensesA['count'])->toBe(1);
+});

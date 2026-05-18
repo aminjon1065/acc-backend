@@ -10,6 +10,7 @@ use App\Models\SaleItem;
 use App\Models\SaleReturn;
 use App\Models\User;
 use App\Services\Api\V1\DashboardCacheVersion;
+use App\UserRole;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -573,6 +574,9 @@ class ReportController extends Controller
     {
         $query = Sale::query();
         $this->applyShopScope($query, $user, $request);
+        // Sellers see their own receipts only — owners/admins see
+        // everything in the shop scope.
+        $this->applySellerOwnership($query, $user, 'sales.user_id');
 
         return $query;
     }
@@ -584,6 +588,7 @@ class ReportController extends Controller
     {
         $query = SaleItem::query()->join('sales', 'sales.id', '=', 'sale_items.sale_id');
         $this->applyShopScope($query, $user, $request, table: 'sales');
+        $this->applySellerOwnership($query, $user, 'sales.user_id');
 
         return $query;
     }
@@ -595,6 +600,7 @@ class ReportController extends Controller
     {
         $query = Expense::query();
         $this->applyShopScope($query, $user, $request);
+        $this->applySellerOwnership($query, $user, 'expenses.user_id');
 
         return $query;
     }
@@ -618,10 +624,41 @@ class ReportController extends Controller
     private function returnsTotalForPeriod(User $user, Request $request): float
     {
         $query = SaleReturn::query();
-        $this->applyShopScope($query, $user, $request);
-        $this->scopeByDate($query, $request);
 
-        return (float) $query->sum('total');
+        // Shop scope — qualified column to stay unambiguous after the
+        // optional seller-join below.
+        $accessibleShopIds = $user->accessibleShopIds();
+        if ($request->filled('shop_id')) {
+            $requested = $request->integer('shop_id');
+            if ($accessibleShopIds === null || in_array($requested, $accessibleShopIds, true)) {
+                $query->where('sale_returns.shop_id', $requested);
+            } else {
+                return 0.0;
+            }
+        } elseif ($accessibleShopIds !== null) {
+            $query->whereIn('sale_returns.shop_id', $accessibleShopIds);
+        }
+
+        // Date scope — qualified to avoid ambiguity once `sales` joins in.
+        if ($request->filled('date_from')) {
+            $query->whereDate('sale_returns.created_at', '>=', $request->date('date_from'));
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('sale_returns.created_at', '<=', $request->date('date_to'));
+        }
+
+        // Sellers see only returns against THEIR sales — join to the
+        // parent sale and filter by sales.user_id. Without this, a
+        // seller's report would include refunds processed for sales
+        // recorded by other staff, distorting their net revenue.
+        if ($user->role === UserRole::Seller) {
+            $query
+                ->join('sales', 'sales.id', '=', 'sale_returns.sale_id')
+                ->where('sales.user_id', $user->id)
+                ->select('sale_returns.*');
+        }
+
+        return (float) $query->sum('sale_returns.total');
     }
 
     /**
@@ -669,9 +706,35 @@ class ReportController extends Controller
             $query->whereIn('sale_returns.shop_id', $accessibleShopIds);
         }
 
+        // Seller scope: only count returns against this seller's own
+        // sales. Joins the parent sale and filters by sales.user_id.
+        if ($user->role === UserRole::Seller) {
+            $query
+                ->join('sales', 'sales.id', '=', 'sale_returns.sale_id')
+                ->where('sales.user_id', $user->id);
+        }
+
         return (float) $query
             ->selectRaw('COALESCE(SUM(sale_return_items.quantity * si.cost_price), 0) as cogs')
             ->value('cogs');
+    }
+
+    /**
+     * Narrow a query to rows owned by the actor when they're a seller.
+     * No-op for owners and super_admins — they see everything in their
+     * accessible shop set. Pass the fully-qualified column when the
+     * query has joined tables (e.g. `sales.user_id`); otherwise the
+     * default `user_id` works on the base table.
+     *
+     * @template TModel of \Illuminate\Database\Eloquent\Model
+     *
+     * @param  Builder<TModel>  $query
+     */
+    private function applySellerOwnership(Builder $query, User $user, string $column = 'user_id'): void
+    {
+        if ($user->role === UserRole::Seller) {
+            $query->where($column, $user->id);
+        }
     }
 
     /**

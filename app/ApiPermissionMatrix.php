@@ -78,7 +78,11 @@ final class ApiPermissionMatrix
             'update' => ['super_admin', 'owner'],
         ],
         'reports' => [
-            'view' => ['super_admin', 'owner'],
+            // Sellers can pull reports — ReportController narrows each
+            // query to rows they own (own sales / sale items / sale
+            // returns / expenses). Stock report stays shop-wide because
+            // "per-seller stock" has no meaningful definition.
+            'view' => ['super_admin', 'owner', 'seller'],
         ],
     ];
 
