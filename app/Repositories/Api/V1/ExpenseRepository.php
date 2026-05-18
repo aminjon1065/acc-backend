@@ -37,12 +37,16 @@ class ExpenseRepository
 
     public function findForUser(User $user, string $id): Expense
     {
-        return $this->queryForUser($user)->findOrFail($id);
+        return $this->queryForUser($user)->with('user:id,name')->findOrFail($id);
     }
 
     public function paginateForUser(User $user, int $limit, ?Request $request = null): LengthAwarePaginator
     {
-        $query = $this->queryForUser($user);
+        // Eager-load `user:id,name` so the resource can render
+        // `created_by_name` without an N+1 lookup per row. Owners use
+        // this to attribute expenses to specific sellers; the column
+        // collapses to null for soft-deleted sellers.
+        $query = $this->queryForUser($user)->with('user:id,name');
 
         if ($request !== null) {
             if ($request->filled('cursor')) {

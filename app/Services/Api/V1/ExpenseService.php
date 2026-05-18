@@ -39,7 +39,9 @@ class ExpenseService
 
             $this->dashboardCacheVersion->bumpShop($shopId);
 
-            return $expense;
+            // Load `user:id,name` so the response carries `created_by_name`
+            // — owners see attribution immediately after a seller posts.
+            return $expense->load('user:id,name');
         });
     }
 
@@ -68,7 +70,7 @@ class ExpenseService
 
             $this->dashboardCacheVersion->bumpShop((int) $expense->shop_id);
 
-            return $expense;
+            return $expense->load('user:id,name');
         });
     }
 

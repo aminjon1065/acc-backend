@@ -20,6 +20,11 @@ class ExpenseResource extends JsonResource
             'user_id' => $this->user_id,
             'name' => $this->name,
             'unit' => $this->unit,
+            // Display-only "who recorded this" surfaced for owner/admin
+            // views. Pulled via the eager-loaded `user:id,name` relation
+            // (see ExpenseRepository::paginateForUser); falls back to
+            // null when the seller account has since been deleted.
+            'created_by_name' => $this->whenLoaded('user', fn () => $this->user?->name),
             'quantity' => (float) $this->quantity,
             'price' => (float) $this->price,
             'total' => (float) $this->total,
