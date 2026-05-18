@@ -123,6 +123,19 @@ class SaleRepository
                 $query->where('debt', '>', 0);
             }
 
+            // Optional narrowing by shop_id — used by the multi-shop owner
+            // picker on the mobile sales screen. The base queryForUser
+            // already restricts to accessibleShopIds; we additionally
+            // require the requested shop to be in that set, otherwise we
+            // ignore the parameter (cheap fall-through, never leaks data).
+            if ($request->filled('shop_id')) {
+                $requestedShopId = $request->integer('shop_id');
+                $accessibleShopIds = $user->accessibleShopIds();
+                if ($accessibleShopIds === null || in_array($requestedShopId, $accessibleShopIds, true)) {
+                    $query->where('shop_id', $requestedShopId);
+                }
+            }
+
             // Composite cursor: stable across insertions, no duplicates.
             if ($request->filled('cursor')) {
                 $decoded = json_decode(base64_decode($request->input('cursor')), true);

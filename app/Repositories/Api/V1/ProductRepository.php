@@ -18,12 +18,26 @@ class ProductRepository
         $query = Product::query();
 
         $accessibleShopIds = $user->accessibleShopIds();
+        $requestedShopId = $request !== null && $request->filled('shop_id')
+            ? $request->integer('shop_id')
+            : null;
+
         if ($accessibleShopIds !== null) {
-            // owner / seller — server-enforced scope, request `shop_id` is ignored.
-            $query->whereIn('shop_id', $accessibleShopIds);
-        } elseif ($request !== null && $request->filled('shop_id')) {
+            // owner / seller — server-enforced scope. When the caller also
+            // narrows by `shop_id` (e.g. a multi-shop owner picking one
+            // shop in the create-purchase modal), honour that narrowing
+            // PROVIDED the shop is in their accessible set. Without this,
+            // a multi-shop owner's product picker would mix SKUs from
+            // every shop they own, and submitting a purchase scoped to
+            // shop A with a product from shop B 404s in the service.
+            if ($requestedShopId !== null && in_array($requestedShopId, $accessibleShopIds, true)) {
+                $query->where('shop_id', $requestedShopId);
+            } else {
+                $query->whereIn('shop_id', $accessibleShopIds);
+            }
+        } elseif ($requestedShopId !== null) {
             // super_admin can narrow to a specific shop on demand.
-            $query->where('shop_id', $request->integer('shop_id'));
+            $query->where('shop_id', $requestedShopId);
         }
 
         return $query;

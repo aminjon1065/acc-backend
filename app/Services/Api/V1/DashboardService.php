@@ -8,10 +8,12 @@ use App\Models\Expense;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
+use App\Models\SaleReturn;
 use App\Models\User;
 use App\UserRole;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 class DashboardService
 {
@@ -29,6 +31,10 @@ class DashboardService
         $salesQuery = $this->scopeByShopAndPeriod(Sale::query(), $shopIds, $from, $to);
         $expensesQuery = $this->scopeByShopAndPeriod(Expense::query(), $shopIds, $from, $to);
         $productsQuery = Product::query();
+        // Only count debts with an outstanding balance. The schema keeps
+        // `balance >= 0` as an invariant — when a transaction would push it
+        // negative, DebtService flips `direction` and stores ABS. So a
+        // settled debt has balance = 0; anything > 0 is still active.
         $debtsQuery = Debt::query()->where('balance', '>', 0);
 
         if ($shopIds !== null) {
@@ -60,6 +66,20 @@ class DashboardService
         $costOfGoodsSold = (float) (clone $saleItemsQuery)
             ->selectRaw('COALESCE(SUM(sale_items.quantity * sale_items.cost_price), 0) as cogs')
             ->value('cogs');
+
+        // Returns processed in the same window pull money OUT of the period
+        // (refund) and PUT goods BACK on the shelf. Both effects need to
+        // land in the financials, otherwise the dashboard overstates both
+        // revenue and profit. We total the refund amount and the cost of
+        // the returned goods so the period_profit math nets out cleanly
+        // even when a sale and its return straddle the report window.
+        $returnsAggregate = $this->returnsTotalsForPeriod($shopIds, $sellerId, $from, $to);
+        $returnsTotal = $returnsAggregate['total'];
+        $returnsCogs = $returnsAggregate['cogs'];
+        // Bucket by `direction`. The balance is always stored as a positive
+        // magnitude (see invariant above); the direction column carries the
+        // sign. Don't switch this to balance-sign-based bucketing — it
+        // would split the receivable/payable totals wrong.
         $debtsStats = (clone $debtsQuery)
             ->selectRaw("
                 COALESCE(SUM(CASE WHEN direction = 'receivable' THEN balance ELSE 0 END), 0) as receivable,
@@ -79,15 +99,24 @@ class DashboardService
             ')
             ->first();
 
+        // Net sales = gross - returns. Net COGS = sold cost - returned cost
+        // (returned goods went back on the shelf, the original cost is
+        // reversed). Period profit is net revenue minus net cost minus
+        // expenses.
+        $netSalesTotal = $salesTotal - $returnsTotal;
+        $netCostOfGoodsSold = $costOfGoodsSold - $returnsCogs;
+
         return [
             'period' => $period,
             'date_from' => $from->toDateString(),
             'date_to' => $to->toDateString(),
             'shop_id' => $shopId,
-            'period_sales_total' => $salesTotal,
+            'period_sales_total' => $netSalesTotal,
+            'period_sales_gross' => $salesTotal,
+            'period_returns_total' => $returnsTotal,
             'period_expenses_total' => $expensesTotal,
-            'period_profit' => $salesTotal - $costOfGoodsSold - $expensesTotal,
-            'period_cogs' => $costOfGoodsSold,
+            'period_profit' => $netSalesTotal - $netCostOfGoodsSold - $expensesTotal,
+            'period_cogs' => $netCostOfGoodsSold,
             'debts_receivable' => $receivable,
             'debts_payable' => $payable,
             'debts_net' => $receivable - $payable,
@@ -316,5 +345,70 @@ class DashboardService
                 'updated_at' => $debt->updated_at?->toISOString(),
             ])
             ->all();
+    }
+
+    /**
+     * Aggregate refund totals + reversed COGS for sale returns processed
+     * inside the given window, scoped to the same shop / seller filters
+     * as the parent report.
+     *
+     * `total` — money refunded to customers (reduces net sales).
+     * `cogs`  — original cost of the returned units (reverses COGS).
+     *
+     * The COGS reversal joins sale_return_items back to the parent
+     * sale's sale_items via (sale_id, product_id) to pick up the
+     * snapshotted cost_price at the time of sale. The same product
+     * appearing multiple times in one sale shares the same cost_price
+     * (snapshot), so MAX is a safe deduplication.
+     *
+     * @param  array<int>|null  $shopIds
+     * @return array{total: float, cogs: float}
+     */
+    private function returnsTotalsForPeriod(
+        ?array $shopIds,
+        ?int $sellerId,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+    ): array {
+        $totalsQuery = SaleReturn::query()
+            ->whereBetween('sale_returns.created_at', [$from, $to]);
+
+        if ($shopIds !== null) {
+            $totalsQuery->whereIn('sale_returns.shop_id', $shopIds);
+        }
+
+        if ($sellerId !== null) {
+            $totalsQuery->where('sale_returns.user_id', $sellerId);
+        }
+
+        $returnsTotal = (float) (clone $totalsQuery)->sum('total');
+
+        $cogsQuery = DB::table('sale_return_items')
+            ->join('sale_returns', 'sale_returns.id', '=', 'sale_return_items.sale_return_id')
+            ->joinSub(
+                DB::table('sale_items')
+                    ->select('sale_id', 'product_id', DB::raw('MAX(cost_price) as cost_price'))
+                    ->whereNotNull('product_id')
+                    ->groupBy('sale_id', 'product_id'),
+                'si',
+                fn ($join) => $join
+                    ->on('si.sale_id', '=', 'sale_returns.sale_id')
+                    ->on('si.product_id', '=', 'sale_return_items.product_id'),
+            )
+            ->whereBetween('sale_returns.created_at', [$from, $to]);
+
+        if ($shopIds !== null) {
+            $cogsQuery->whereIn('sale_returns.shop_id', $shopIds);
+        }
+
+        if ($sellerId !== null) {
+            $cogsQuery->where('sale_returns.user_id', $sellerId);
+        }
+
+        $returnsCogs = (float) $cogsQuery
+            ->selectRaw('COALESCE(SUM(sale_return_items.quantity * si.cost_price), 0) as cogs')
+            ->value('cogs');
+
+        return ['total' => $returnsTotal, 'cogs' => $returnsCogs];
     }
 }

@@ -137,6 +137,28 @@ class DebtService
         });
     }
 
+    /**
+     * Rename the contact on an existing debt. The balance, direction, and
+     * transaction history are untouched — those flow through storeTransaction.
+     */
+    public function updateDebt(Debt $debt, User $actor, string $personName): Debt
+    {
+        return DB::transaction(function () use ($debt, $actor, $personName): Debt {
+            $previousName = $debt->person_name;
+            $debt->update(['person_name' => $personName]);
+            $debt->increment('version');
+
+            $this->auditLogger->log('debts.updated', $actor, $debt, [
+                'person_name' => $personName,
+                'previous_person_name' => $previousName,
+            ], (int) $debt->shop_id);
+
+            $this->dashboardCacheVersion->bumpShop((int) $debt->shop_id);
+
+            return $debt->fresh(['user:id,name', 'transactions.user:id,name']);
+        });
+    }
+
     public function deleteDebt(Debt $debt, User $actor): void
     {
         DB::transaction(function () use ($debt, $actor): void {

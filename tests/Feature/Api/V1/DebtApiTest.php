@@ -108,6 +108,69 @@ test('overpayment flips debt direction (receivable → payable)', function () {
         ->assertJsonPath('data.direction', 'payable');
 });
 
+test('owner can rename a debt contact', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+
+    $debt = Debt::factory()->create([
+        'shop_id' => $shop->id,
+        'user_id' => $owner->id,
+        'person_name' => 'Ivan',
+        'direction' => 'receivable',
+        'balance' => 100,
+    ]);
+
+    $this->actingAs($owner, 'sanctum')
+        ->patchJson("/api/v1/debts/{$debt->id}", [
+            'person_name' => 'Ivan Petrov',
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.person_name', 'Ivan Petrov')
+        ->assertJsonPath('data.balance', 100)
+        ->assertJsonPath('data.direction', 'receivable');
+
+    expect($debt->fresh()->person_name)->toBe('Ivan Petrov');
+});
+
+test('seller cannot rename someone else\'s debt', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $sellerA = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Seller->value,
+    ]);
+    $sellerB = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Seller->value,
+    ]);
+
+    $debt = Debt::factory()->create([
+        'shop_id' => $shop->id,
+        'user_id' => $sellerA->id,
+        'person_name' => 'Customer',
+        'direction' => 'receivable',
+        'balance' => 50,
+    ]);
+
+    // Seller A (the creator) can rename their own debt — sellers have
+    // update permission scoped to their own rows in DebtPolicy.
+    $this->actingAs($sellerA, 'sanctum')
+        ->patchJson("/api/v1/debts/{$debt->id}", ['person_name' => 'Renamed'])
+        ->assertSuccessful();
+
+    // Seller B (different seller in same shop) is blocked — they didn't
+    // create this debt so the policy denies the update.
+    $this->actingAs($sellerB, 'sanctum')
+        ->patchJson("/api/v1/debts/{$debt->id}", ['person_name' => 'Hijack'])
+        ->assertForbidden();
+});
+
 test('overpayment in payable direction flips back to receivable', function () {
     $shop = Shop::factory()->create();
     $owner = User::factory()->create([

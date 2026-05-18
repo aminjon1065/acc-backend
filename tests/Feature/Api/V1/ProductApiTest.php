@@ -202,6 +202,35 @@ test('super admin can access products from all shops', function () {
         ->assertJsonCount(5, 'data');
 });
 
+test('multi-shop owner can narrow product list to one shop via shop_id', function () {
+    $shopA = Shop::factory()->create();
+    $shopB = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shopA->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    // Make `accessibleShopIds()` return [A, B] — the owner owns both shops.
+    $shopA->update(['owner_id' => $owner->id]);
+    $shopB->update(['owner_id' => $owner->id]);
+
+    Product::factory()->count(2)->create(['shop_id' => $shopA->id]);
+    Product::factory()->count(3)->create(['shop_id' => $shopB->id]);
+
+    // Without shop_id: sees all 5 across both owned shops.
+    $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/products?limit=10')
+        ->assertOk()
+        ->assertJsonCount(5, 'data');
+
+    // With shop_id=B: narrows to that shop's catalog. Regression for the
+    // create-purchase 404 — the picker must only show SKUs from the
+    // shop the user is buying for.
+    $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/products?limit=10&shop_id='.$shopB->id)
+        ->assertOk()
+        ->assertJsonCount(3, 'data');
+});
+
 test('products ids endpoint returns id+updated_at scoped to actor', function () {
     $shop = Shop::factory()->create();
     $owner = User::factory()->create(['shop_id' => $shop->id, 'role' => UserRole::Owner->value]);

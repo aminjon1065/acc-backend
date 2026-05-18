@@ -21,6 +21,7 @@ class PurchaseResource extends JsonResource
             'supplier_name' => $this->supplier_name,
             'total' => (float) $this->total_amount,
             'total_amount' => (float) $this->total_amount,
+            'version' => (int) $this->version,
             'items' => $this->whenLoaded('items', function () {
                 return $this->items->map(fn ($item) => [
                     'id' => $item->id,

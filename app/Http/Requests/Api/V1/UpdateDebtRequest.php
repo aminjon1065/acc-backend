@@ -4,7 +4,7 @@ namespace App\Http\Requests\Api\V1;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class UpdateExpenseRequest extends FormRequest
+class UpdateDebtRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -17,16 +17,17 @@ class UpdateExpenseRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
+     * Only the human-readable label is editable here. `balance`, `direction`,
+     * and `opening_balance` are historical — they change exclusively via
+     * the transactions endpoint, where the audit trail is preserved.
+     *
      * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
         return [
-            'name' => ['sometimes', 'required', 'string', 'max:255'],
-            'unit' => ['sometimes', 'nullable', 'string', 'max:255'],
-            'quantity' => ['sometimes', 'required', 'numeric', 'gt:0'],
-            'price' => ['sometimes', 'required', 'numeric', 'gt:0'],
-            'note' => ['sometimes', 'nullable', 'string'],
+            'person_name' => ['required', 'string', 'max:255'],
+            'version' => ['nullable', 'integer'],
         ];
     }
 
@@ -36,9 +37,7 @@ class UpdateExpenseRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'name.required' => 'Expense name is required.',
-            'quantity.required' => 'Expense quantity is required.',
-            'price.required' => 'Expense price is required.',
+            'person_name.required' => 'Person name is required.',
         ];
     }
 }

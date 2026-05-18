@@ -26,6 +26,7 @@ class Expense extends Model
         'shop_id',
         'user_id',
         'name',
+        'unit',
         'quantity',
         'price',
         'total',

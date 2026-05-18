@@ -6,6 +6,7 @@ use App\Concerns\EnforcesEntityVersion;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\StoreDebtRequest;
 use App\Http\Requests\Api\V1\StoreDebtTransactionRequest;
+use App\Http\Requests\Api\V1\UpdateDebtRequest;
 use App\Http\Resources\Api\V1\DebtResource;
 use App\Models\Debt;
 use App\Models\DebtTransaction;
@@ -73,6 +74,31 @@ class DebtController extends Controller
         $scoped = $this->debts->findForUser($request->user(), $debt->id, ['user:id,name', 'transactions.user:id,name']);
 
         return new DebtResource($scoped);
+    }
+
+    /**
+     * Rename the contact on a debt. The balance + direction + transactions
+     * stay as-is; only the human-readable label changes.
+     */
+    public function update(UpdateDebtRequest $request, Debt $debt): DebtResource
+    {
+        $this->authorize('update', $debt);
+
+        $this->enforceVersionMatch(
+            $request,
+            $debt,
+            fn () => new DebtResource($this->debts->findForUser($request->user(), $debt->id, ['user:id,name', 'transactions.user:id,name'])),
+            'debt',
+        );
+
+        $scoped = $this->debts->findForUser($request->user(), $debt->id);
+        $updated = $this->debtService->updateDebt(
+            $scoped,
+            $request->user(),
+            $request->validated('person_name'),
+        );
+
+        return new DebtResource($updated);
     }
 
     public function storeTransaction(StoreDebtTransactionRequest $request, Debt $debt): DebtResource

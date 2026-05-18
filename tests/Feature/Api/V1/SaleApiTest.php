@@ -773,3 +773,167 @@ test('sales list filters by payment type, sale type, and debt-only flag', functi
         ->json('data');
     expect(collect($combined)->pluck('id')->all())->toEqual([$cashFull]);
 });
+
+test('profit report subtracts returns from sales and COGS', function () {
+    $shop = \App\Models\Shop::factory()->create();
+    $owner = \App\Models\User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => \App\UserRole::Owner->value,
+    ]);
+    $product = \App\Models\Product::factory()->create([
+        'shop_id' => $shop->id,
+        'stock_quantity' => 10,
+        'cost_price' => 40,
+        'sale_price' => 100,
+    ]);
+
+    // Sell 2 units, then return 1.
+    $sale = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+        ])
+        ->assertSuccessful()
+        ->json('data');
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/sales/{$sale['id']}/return", [
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ])
+        ->assertSuccessful();
+
+    $today = now()->toDateString();
+    $report = $this->actingAs($owner, 'sanctum')
+        ->getJson("/api/v1/reports/profit?date_from={$today}&date_to={$today}")
+        ->assertSuccessful()
+        ->json('data');
+
+    // Gross sale = 200 (2 × 100), return = 100 (1 × 100) → net 100.
+    // Gross COGS = 80 (2 × 40), returns_cogs = 40 (1 × 40) → net 40.
+    // Profit = 100 - 40 - 0 = 60.
+    expect((float) $report['sales_gross'])->toBe(200.0);
+    expect((float) $report['returns_total'])->toBe(100.0);
+    expect((float) $report['returns_cogs'])->toBe(40.0);
+    expect((float) $report['sales_total'])->toBe(100.0);
+    expect((float) $report['cost_of_goods_sold'])->toBe(40.0);
+    expect((float) $report['profit'])->toBe(60.0);
+});
+
+test('sales report exposes returns_total and net sales', function () {
+    $shop = \App\Models\Shop::factory()->create();
+    $owner = \App\Models\User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => \App\UserRole::Owner->value,
+    ]);
+    $product = \App\Models\Product::factory()->create([
+        'shop_id' => $shop->id,
+        'stock_quantity' => 5,
+        'cost_price' => 10,
+        'sale_price' => 50,
+    ]);
+
+    $sale = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'items' => [['product_id' => $product->id, 'quantity' => 3]],
+        ])
+        ->assertSuccessful()
+        ->json('data');
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/sales/{$sale['id']}/return", [
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+        ])
+        ->assertSuccessful();
+
+    $today = now()->toDateString();
+    $report = $this->actingAs($owner, 'sanctum')
+        ->getJson("/api/v1/reports/sales?date_from={$today}&date_to={$today}")
+        ->assertSuccessful()
+        ->json('data');
+
+    // Gross = 150 (3 × 50), returns = 100 (2 × 50), net = 50.
+    expect((float) $report['sales_gross'])->toBe(150.0);
+    expect((float) $report['returns_total'])->toBe(100.0);
+    expect((float) $report['total_amount'])->toBe(50.0);
+});
+
+test('stock report period balance: opening + incoming - outgoing + returned = closing', function () {
+    \Carbon\Carbon::setTestNow(\Carbon\Carbon::parse('2026-06-15 12:00:00'));
+
+    $shop = \App\Models\Shop::factory()->create();
+    $owner = \App\Models\User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => \App\UserRole::Owner->value,
+    ]);
+    $product = \App\Models\Product::factory()->create([
+        'shop_id' => $shop->id,
+        'stock_quantity' => 100,
+        'cost_price' => 5,
+        'sale_price' => 10,
+    ]);
+
+    // Purchase 20 units inside the window (period 06-10 → 06-20).
+    \Carbon\Carbon::setTestNow(\Carbon\Carbon::parse('2026-06-12 09:00:00'));
+    $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/purchases', [
+            'items' => [['product_id' => $product->id, 'quantity' => 20, 'price' => 5]],
+        ])
+        ->assertSuccessful();
+
+    // Sell 8 inside the window.
+    \Carbon\Carbon::setTestNow(\Carbon\Carbon::parse('2026-06-14 10:00:00'));
+    $sale = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'items' => [['product_id' => $product->id, 'quantity' => 8]],
+        ])
+        ->assertSuccessful()
+        ->json('data');
+
+    // Return 3 inside the window.
+    \Carbon\Carbon::setTestNow(\Carbon\Carbon::parse('2026-06-14 16:00:00'));
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/sales/{$sale['id']}/return", [
+            'items' => [['product_id' => $product->id, 'quantity' => 3]],
+        ])
+        ->assertSuccessful();
+
+    \Carbon\Carbon::setTestNow(\Carbon\Carbon::parse('2026-06-25 12:00:00'));
+    $report = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/reports/stock?date_from=2026-06-10&date_to=2026-06-20')
+        ->assertSuccessful()
+        ->json('data');
+
+    expect($report['mode'])->toBe('period');
+    $row = collect($report['data'])->firstWhere('id', $product->id);
+    expect($row)->not->toBeNull();
+    // Current stock now = 100 + 20 - 8 + 3 = 115
+    // Closing at 06-20 = 115 (no movements after 06-20).
+    // Opening at 06-10 = 115 - 20 + 8 - 3 = 100.
+    expect((float) $row['opening_qty'])->toBe(100.0);
+    expect((float) $row['incoming_qty'])->toBe(20.0);
+    expect((float) $row['outgoing_qty'])->toBe(8.0);
+    expect((float) $row['returned_qty'])->toBe(3.0);
+    expect((float) $row['closing_qty'])->toBe(115.0);
+    // Sanity: opening + in - out + returned = closing
+    expect($row['opening_qty'] + $row['incoming_qty'] - $row['outgoing_qty'] + $row['returned_qty'])
+        ->toBe($row['closing_qty']);
+
+    \Carbon\Carbon::setTestNow();
+});
+
+test('stock report without dates returns snapshot mode', function () {
+    $shop = \App\Models\Shop::factory()->create();
+    $owner = \App\Models\User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => \App\UserRole::Owner->value,
+    ]);
+    \App\Models\Product::factory()->create([
+        'shop_id' => $shop->id,
+        'stock_quantity' => 50,
+    ]);
+
+    $report = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/reports/stock')
+        ->assertSuccessful()
+        ->json('data');
+
+    expect($report['mode'])->toBe('snapshot');
+    expect((float) $report['stock_quantity_total'])->toBe(50.0);
+});
