@@ -58,6 +58,13 @@ class ReportController extends Controller
             // expose returns as a top-level deduction.
             $returnsTotal = $this->returnsTotalForPeriod($user, $request);
             $netSalesTotal = $salesGross - $returnsTotal;
+            // Per-item breakdown for the PDF export "Возвраты" table.
+            // Skipped when the period has no refunds to keep the payload
+            // light. Same row-cap reasoning as the expenses report:
+            // bounded by the date window so unbounded growth is unlikely.
+            $returnsItems = $returnsTotal > 0
+                ? $this->returnsItemsForPeriod($user, $request)
+                : [];
 
             $dailyData = $sales
                 ->groupBy(fn (Sale $sale) => $sale->created_at?->toDateString() ?? '')
@@ -80,6 +87,7 @@ class ReportController extends Controller
                 'total_amount' => $netSalesTotal,
                 'sales_gross' => $salesGross,
                 'returns_total' => $returnsTotal,
+                'returns' => $returnsItems,
                 'cash' => $cashTotal,
                 'card' => $cardTotal,
                 'transfer' => $transferTotal,
@@ -614,6 +622,84 @@ class ReportController extends Controller
         $this->applyShopScope($query, $user, $request);
 
         return $query;
+    }
+
+    /**
+     * Flat per-line breakdown of returns inside the report window for the
+     * PDF "Возвраты" table on mobile. One row per `sale_return_items`
+     * line, enriched with parent return metadata (actor, reason, refund
+     * method) so a single table render covers everything the export
+     * needs without grouping client-side.
+     *
+     * Scoping mirrors `returnsTotalForPeriod` — sellers see only refunds
+     * processed against their own sales, owners/admins see everything in
+     * the shop scope.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function returnsItemsForPeriod(User $user, Request $request): array
+    {
+        $query = DB::table('sale_return_items')
+            ->join('sale_returns', 'sale_returns.id', '=', 'sale_return_items.sale_return_id')
+            ->leftJoin('users', 'users.id', '=', 'sale_returns.user_id');
+
+        if ($request->filled('date_from')) {
+            $query->whereDate('sale_returns.created_at', '>=', $request->date('date_from'));
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('sale_returns.created_at', '<=', $request->date('date_to'));
+        }
+
+        $accessibleShopIds = $user->accessibleShopIds();
+        if ($request->filled('shop_id')) {
+            $requested = $request->integer('shop_id');
+            if ($accessibleShopIds === null || in_array($requested, $accessibleShopIds, true)) {
+                $query->where('sale_returns.shop_id', $requested);
+            } else {
+                return [];
+            }
+        } elseif ($accessibleShopIds !== null) {
+            $query->whereIn('sale_returns.shop_id', $accessibleShopIds);
+        }
+
+        if ($user->role === UserRole::Seller) {
+            $query
+                ->join('sales', 'sales.id', '=', 'sale_returns.sale_id')
+                ->where('sales.user_id', $user->id);
+        }
+
+        return $query
+            ->orderByDesc('sale_returns.created_at')
+            ->orderBy('sale_return_items.id')
+            ->get([
+                'sale_returns.id as sale_return_id',
+                'sale_returns.sale_id',
+                'sale_returns.created_at',
+                'sale_returns.reason',
+                'sale_returns.refund_method',
+                'users.name as seller_name',
+                'sale_return_items.name as product_name',
+                'sale_return_items.unit',
+                'sale_return_items.quantity',
+                'sale_return_items.price',
+                'sale_return_items.total',
+            ])
+            ->map(fn ($row) => [
+                'sale_return_id' => (string) $row->sale_return_id,
+                'sale_id' => (string) $row->sale_id,
+                'created_at' => $row->created_at
+                    ? \Carbon\Carbon::parse($row->created_at)->toISOString()
+                    : null,
+                'reason' => $row->reason,
+                'refund_method' => $row->refund_method,
+                'seller_name' => $row->seller_name,
+                'product_name' => $row->product_name,
+                'unit' => $row->unit,
+                'quantity' => (float) $row->quantity,
+                'price' => (float) $row->price,
+                'total' => (float) $row->total,
+            ])
+            ->all();
     }
 
     /**

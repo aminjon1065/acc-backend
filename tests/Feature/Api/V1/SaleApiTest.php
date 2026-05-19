@@ -852,6 +852,46 @@ test('sales report exposes returns_total and net sales', function () {
     expect((float) $report['sales_gross'])->toBe(150.0);
     expect((float) $report['returns_total'])->toBe(100.0);
     expect((float) $report['total_amount'])->toBe(50.0);
+
+    // Per-line returns breakdown — mobile renders this as the "Возвраты"
+    // table in the PDF export. One row per `sale_return_items` line.
+    expect($report['returns'])->toBeArray()->toHaveCount(1);
+    $returnRow = $report['returns'][0];
+    expect((string) $returnRow['sale_id'])->toBe((string) $sale['id']);
+    expect((float) $returnRow['quantity'])->toBe(2.0);
+    expect((float) $returnRow['price'])->toBe(50.0);
+    expect((float) $returnRow['total'])->toBe(100.0);
+    expect($returnRow['seller_name'])->toBe($owner->name);
+    expect($returnRow['product_name'])->toBe($product->name);
+});
+
+test('sales report returns array is empty when there are no refunds', function () {
+    $shop = \App\Models\Shop::factory()->create();
+    $owner = \App\Models\User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => \App\UserRole::Owner->value,
+    ]);
+    $product = \App\Models\Product::factory()->create([
+        'shop_id' => $shop->id,
+        'stock_quantity' => 5,
+        'cost_price' => 10,
+        'sale_price' => 50,
+    ]);
+
+    $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ])
+        ->assertSuccessful();
+
+    $today = now()->toDateString();
+    $report = $this->actingAs($owner, 'sanctum')
+        ->getJson("/api/v1/reports/sales?date_from={$today}&date_to={$today}")
+        ->assertSuccessful()
+        ->json('data');
+
+    expect((float) $report['returns_total'])->toBe(0.0);
+    expect($report['returns'])->toBe([]);
 });
 
 test('stock report period balance: opening + incoming - outgoing + returned = closing', function () {
