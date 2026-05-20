@@ -37,8 +37,19 @@ class ReportController extends Controller
         $cacheKey = "reports:sales:shop_{$shopId}:v{$version}:from_{$request->date_from}:to_{$request->date_to}";
 
         $data = Cache::remember($cacheKey, 300, function () use ($user, $request) {
+            // Eager-load items (+ their product for the canonical name)
+            // and the seller so receipt blocks in the PDF can render
+            // without a second request. The `sale_items` table stores
+            // the line label in `name` — for product lines we prefer
+            // the current product name, falling back to the stored
+            // value (matches SaleResource's resolution).
             $sales = $this->scopeByDate($this->scopeSales($user, $request), $request)
-                ->get(['id', 'total', 'payment_type', 'created_at']);
+                ->with([
+                    'items:id,sale_id,product_id,name,unit,quantity,price,total,cost_price',
+                    'items.product:id,name',
+                    'user:id,name',
+                ])
+                ->get(['id', 'shop_id', 'user_id', 'customer_name', 'type', 'total', 'discount', 'paid', 'debt', 'payment_type', 'created_at']);
 
             $salesGross = (float) $sales->sum('total');
             $salesCount = $sales->count();
@@ -78,6 +89,38 @@ class ReportController extends Controller
                 ->values()
                 ->all();
 
+            // Per-sale receipts (items inline) — feeds the "Чеки" section
+            // of the PDF export. Sellers must not see `cost_price`; the
+            // resource-style filter is applied here so a downstream
+            // consumer can't reconstruct it.
+            $isSeller = $user->role === \App\UserRole::Seller;
+            $receipts = $sales
+                ->sortByDesc('created_at')
+                ->map(fn (Sale $sale) => [
+                    'sale_id' => (string) $sale->id,
+                    'created_at' => $sale->created_at?->toISOString(),
+                    'customer_name' => $sale->customer_name,
+                    'seller_name' => $sale->user?->name,
+                    'payment_type' => $sale->payment_type?->value ?? $sale->payment_type,
+                    'type' => $sale->type?->value ?? $sale->type,
+                    'total' => (float) $sale->total,
+                    'discount' => (float) $sale->discount,
+                    'paid' => (float) $sale->paid,
+                    'debt' => (float) $sale->debt,
+                    'items' => $sale->items->map(fn ($item) => [
+                        'product_id' => $item->product_id,
+                        'product_name' => $item->product?->name ?? $item->name,
+                        'unit' => $item->unit,
+                        'quantity' => (float) $item->quantity,
+                        'price' => (float) $item->price,
+                        'total' => (float) $item->total,
+                        // Sellers see null — backend policy mirror.
+                        'cost_price' => $isSeller ? null : (float) $item->cost_price,
+                    ])->values()->all(),
+                ])
+                ->values()
+                ->all();
+
             return [
                 'total_sales' => $salesCount,
                 // `total_amount` stays NET so callers that already
@@ -88,6 +131,7 @@ class ReportController extends Controller
                 'sales_gross' => $salesGross,
                 'returns_total' => $returnsTotal,
                 'returns' => $returnsItems,
+                'receipts' => $receipts,
                 'cash' => $cashTotal,
                 'card' => $cardTotal,
                 'transfer' => $transferTotal,
@@ -287,14 +331,16 @@ class ReportController extends Controller
             ->count();
         $outOfStockCount = (int) (clone $products)->where('stock_quantity', '<=', 0)->count();
         $productRows = (clone $products)
-            ->select(['id', 'name', 'unit', 'stock_quantity', 'sale_price', 'cost_price'])
+            ->select(['id', 'name', 'code', 'unit', 'stock_quantity', 'low_stock_alert', 'sale_price', 'cost_price'])
             ->orderByRaw('(stock_quantity * sale_price) desc')
             ->get()
             ->map(fn (Product $product) => [
                 'id' => $product->id,
                 'name' => $product->name,
+                'code' => $product->code,
                 'unit' => $product->unit,
                 'stock_quantity' => (float) $product->stock_quantity,
+                'low_stock_alert' => (float) $product->low_stock_alert,
                 'sale_price' => (float) $product->sale_price,
                 'cost_price' => (float) $product->cost_price,
                 'value' => (float) $product->stock_quantity * (float) $product->sale_price,
@@ -343,7 +389,7 @@ class ReportController extends Controller
         $dateTo = $request->date('date_to')->endOfDay();
 
         $products = $this->scopeProducts($user, $request)
-            ->select(['id', 'name', 'unit', 'shop_id', 'stock_quantity', 'sale_price', 'cost_price'])
+            ->select(['id', 'name', 'code', 'unit', 'shop_id', 'stock_quantity', 'low_stock_alert', 'sale_price', 'cost_price'])
             ->get();
 
         // Movements grouped per product, split into in-period (after_from
@@ -416,7 +462,9 @@ class ReportController extends Controller
             $rows[] = [
                 'id' => $pId,
                 'name' => $product->name,
+                'code' => $product->code,
                 'unit' => $product->unit,
+                'low_stock_alert' => (float) $product->low_stock_alert,
                 'opening_qty' => $opening,
                 'incoming_qty' => $incoming,
                 'outgoing_qty' => $outgoing,
