@@ -85,7 +85,7 @@ class AuthController extends Controller
                     $user->only(['id', 'shop_id', 'name', 'email', 'role']),
                     [
                         'shop_name' => $user->shop?->name,
-                        'owned_shop_ids' => $user->owned_shop_ids,
+                        'owned_shop_ids' => $user->active_owned_shop_ids,
                         'pin_reset_required' => $pinResetRequired,
                     ]
                 ),
@@ -105,7 +105,7 @@ class AuthController extends Controller
                 $user->only(['id', 'shop_id', 'name', 'email', 'role']),
                 [
                     'shop_name' => $user->shop?->name,
-                    'owned_shop_ids' => $user->owned_shop_ids,
+                    'owned_shop_ids' => $user->active_owned_shop_ids,
                     'pin_reset_required' => (bool) $user->pin_reset_required,
                 ]
             ),

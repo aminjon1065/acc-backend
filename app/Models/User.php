@@ -118,15 +118,28 @@ class User extends Authenticatable
     }
 
     /**
+     * Cached array of active shop ids for owners. Suspended shops are
+     * excluded so a paused tenant is invisible to its owner across every
+     * read/write path that funnels through `accessibleShopIds()`.
+     *
+     * @return list<int>
+     */
+    public function getActiveOwnedShopIdsAttribute(): array
+    {
+        return $this->ownedShops()->where('status', 'active')->pluck('id')->all();
+    }
+
+    /**
      * Shop IDs this user is authorized to see at all. Repositories use this
      * as the base scope filter for every entity that has a `shop_id` column.
      *
      *   • super_admin → null  (no filter; the request `shop_id` param can
      *                          narrow further per-call)
-     *   • owner      → list of shops where `shops.owner_id = user.id`
-     *   • seller     → exactly [user.shop_id], or [] if shop_id is missing
-     *                  (shouldn't happen in practice; defensive empty list
-     *                  ensures no data leak rather than throwing)
+     *   • owner      → list of *active* shops where `shops.owner_id = user.id`.
+     *                  Suspended shops are dropped — the admin's pause must
+     *                  cut data access end-to-end, not just the API ping.
+     *   • seller     → [user.shop_id] only if that single shop is active;
+     *                  empty list otherwise (suspended shop → no data).
      *
      * @return list<int>|null
      */
@@ -136,22 +149,25 @@ class User extends Authenticatable
             return null;
         }
         if ($this->role === UserRole::Owner) {
-            return $this->owned_shop_ids;
+            return $this->active_owned_shop_ids;
         }
 
-        return $this->shop_id !== null ? [(int) $this->shop_id] : [];
+        if ($this->shop_id === null) {
+            return [];
+        }
+
+        $this->loadMissing('shop');
+
+        return $this->shop?->status === 'active' ? [(int) $this->shop_id] : [];
     }
 
     /**
-     * True if the user has any shop they can act in.
+     * True if the user has any shop they can act in *right now*. Mirrors
+     * `accessibleShopIds()` — suspended shops don't count.
      *
      *   • super_admin: always true (operates above shop scope)
-     *   • owner: true iff at least one shop is assigned to them
-     *   • seller: true iff `shop_id` is set (which is enforced at creation
-     *     for sellers, so practically always true)
-     *
-     * Used by policies that gate "can do X at all" (vs "can do X on
-     * specific entity Y" — that's `canAccessShop`).
+     *   • owner: true iff at least one owned shop is active
+     *   • seller: true iff their `shop_id` references an active shop
      */
     public function hasAnyShop(): bool
     {
@@ -159,18 +175,21 @@ class User extends Authenticatable
             return true;
         }
         if ($this->role === UserRole::Owner) {
-            return $this->owned_shop_ids !== [];
+            return $this->active_owned_shop_ids !== [];
         }
 
-        return $this->shop_id !== null;
+        if ($this->shop_id === null) {
+            return false;
+        }
+
+        $this->loadMissing('shop');
+
+        return $this->shop?->status === 'active';
     }
 
     /**
      * True if the user can act on entities belonging to the given shop.
-     *
-     *   • super_admin: always true
-     *   • owner: shop must be in their owned set
-     *   • seller: shop must equal their single `shop_id`
+     * Suspended shops are rejected for everyone except super_admin.
      */
     public function canAccessShop(int $shopId): bool
     {
@@ -178,10 +197,16 @@ class User extends Authenticatable
             return true;
         }
         if ($this->role === UserRole::Owner) {
-            return in_array($shopId, $this->owned_shop_ids, true);
+            return in_array($shopId, $this->active_owned_shop_ids, true);
         }
 
-        return $this->shop_id !== null && (int) $this->shop_id === $shopId;
+        if ($this->shop_id === null || (int) $this->shop_id !== $shopId) {
+            return false;
+        }
+
+        $this->loadMissing('shop');
+
+        return $this->shop?->status === 'active';
     }
 
     /**
