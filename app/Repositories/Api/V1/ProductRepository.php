@@ -110,8 +110,15 @@ class ProductRepository
             }
         }
 
-        // Include soft-deleted records so mobile clients can delete local copies.
-        $query->withTrashed();
+        // Soft-deleted rows are tombstones used by delta-sync clients to
+        // evict their local copies. Regular UI listings (pickers,
+        // catalog, search) must NOT see them — letting a deleted product
+        // into a purchase / sale picker produces a 404 on submit, because
+        // the create policy rejects trashed rows. Sync passes
+        // `include_trashed=1` to opt in.
+        if ($request !== null && $request->boolean('include_trashed')) {
+            $query->withTrashed();
+        }
 
         return $query
             ->orderByDesc('updated_at')

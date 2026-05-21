@@ -69,6 +69,12 @@ class ProductController extends Controller
                 'limit' => $request->integer('limit', 20),
                 'search' => trim((string) $request->input('search', '')),
                 'stock_status' => $request->string('stock_status')->toString(),
+                // `include_trashed` flips which rows are even visible, so
+                // it MUST be in the cache key — otherwise the first
+                // caller's view sticks for everyone (a regular picker
+                // request could be served the sync-flavoured payload
+                // with tombstones, and vice-versa).
+                'include_trashed' => $request->boolean('include_trashed'),
             ], JSON_THROW_ON_ERROR))
         );
 

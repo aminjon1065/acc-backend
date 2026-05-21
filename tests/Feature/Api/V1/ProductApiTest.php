@@ -253,3 +253,33 @@ test('products ids endpoint returns id+updated_at scoped to actor', function () 
     expect(count($ids))->toBe(2);
     expect($response->json('data.0'))->toHaveKey('updated_at');
 });
+
+test('products list hides soft-deleted rows by default and exposes them only with include_trashed', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $alive = Product::factory()->create(['shop_id' => $shop->id, 'name' => 'Alive']);
+    $gone = Product::factory()->create(['shop_id' => $shop->id, 'name' => 'Gone']);
+    $gone->delete();
+
+    $idsDefault = collect(
+        $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/products')
+            ->assertSuccessful()
+            ->json('data')
+    )->pluck('id')->all();
+
+    expect($idsDefault)->toContain($alive->id);
+    expect($idsDefault)->not->toContain($gone->id);
+
+    $idsWithTrashed = collect(
+        $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/products?include_trashed=1')
+            ->assertSuccessful()
+            ->json('data')
+    )->pluck('id')->all();
+
+    expect($idsWithTrashed)->toContain($alive->id)->toContain($gone->id);
+});
