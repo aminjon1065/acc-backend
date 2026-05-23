@@ -220,36 +220,64 @@ class ReportController extends Controller
     public function profit(Request $request): JsonResponse
     {
         $user = $request->user();
-        // Cache key must distinguish per-user scope: owners with different
-        // owned-shop sets must NOT share cache slots even when both query
-        // without an explicit shop_id. Encoding user_id alongside the
-        // resolved shop scope guarantees that.
+        // Sellers must never see cost-of-goods figures (it would let them
+        // back-calculate `cost_price` per product, which their role explicitly
+        // hides). The cache key segregates seller responses so the cost-less
+        // payload never leaks into an owner's slot and vice-versa.
+        $isSeller = $user->role === UserRole::Seller;
         $shopId = $user->isSuperAdmin()
             ? 'sa_'.($request->shop_id ?? 'all')
             : 'user_'.$user->id.($request->filled('shop_id') ? '_shop_'.$request->integer('shop_id') : '');
         $version = $this->cacheVersion->versionForShop(is_int($shopId) ? $shopId : null);
-        $cacheKey = "reports:profit:shop_{$shopId}:v{$version}:from_{$request->date_from}:to_{$request->date_to}";
+        $roleSuffix = $isSeller ? ':seller' : '';
+        $cacheKey = "reports:profit:shop_{$shopId}:v{$version}:from_{$request->date_from}:to_{$request->date_to}{$roleSuffix}";
 
-        $data = Cache::remember($cacheKey, 300, function () use ($user, $request) {
+        $data = Cache::remember($cacheKey, 300, function () use ($user, $request, $isSeller) {
             $salesQuery = $this->scopeByDate($this->scopeSales($user, $request), $request);
-            $saleItemsQuery = $this->scopeByDate($this->scopeSaleItems($user, $request), $request, column: 'sales.created_at');
             $expensesQuery = $this->scopeByDate($this->scopeExpenses($user, $request), $request);
 
             $salesGross = (float) $salesQuery->sum('total');
+            $expensesTotal = (float) $expensesQuery->sum('total');
+
+            // Returns reverse revenue (and COGS, for non-seller roles).
+            $returnsTotal = $this->returnsTotalForPeriod($user, $request);
+            $netSalesTotal = $salesGross - $returnsTotal;
+
+            if ($isSeller) {
+                // Seller-facing payload: profit ≡ revenue − expenses.
+                // We deliberately drop every cost-related field so a seller
+                // can't reverse-engineer cost_price from the response body.
+                $profit = $netSalesTotal - $expensesTotal;
+
+                return [
+                    'total_sales' => $netSalesTotal,
+                    'total_expenses' => $expensesTotal,
+                    'total_cost' => 0,
+                    'date_from' => $request->string('date_from')->toString(),
+                    'date_to' => $request->string('date_to')->toString(),
+                    'profit' => $profit,
+                    'sales_total' => $netSalesTotal,
+                    'sales_gross' => $salesGross,
+                    'returns_total' => $returnsTotal,
+                    'returns_cogs' => 0,
+                    'cost_of_goods_sold' => 0,
+                    'cost_of_goods_sold_gross' => 0,
+                    'expenses_total' => $expensesTotal,
+                ];
+            }
+
+            $saleItemsQuery = $this->scopeByDate($this->scopeSaleItems($user, $request), $request, column: 'sales.created_at');
             $costOfGoodsSold = (float) $saleItemsQuery
                 ->selectRaw('COALESCE(SUM(sale_items.quantity * sale_items.cost_price), 0) as cogs')
                 ->value('cogs');
-            $expensesTotal = (float) $expensesQuery->sum('total');
 
             // Returns processed in the window reverse both revenue and
             // the matching COGS — the goods went back on the shelf, the
             // cost we'd booked against them is no longer real. Without
             // this, a fully returned sale leaves period_profit pinned
             // at -COGS forever.
-            $returnsTotal = $this->returnsTotalForPeriod($user, $request);
             $returnsCogs = $this->returnsCogsForPeriod($user, $request);
 
-            $netSalesTotal = $salesGross - $returnsTotal;
             $netCostOfGoodsSold = $costOfGoodsSold - $returnsCogs;
             $profit = $netSalesTotal - $netCostOfGoodsSold - $expensesTotal;
 

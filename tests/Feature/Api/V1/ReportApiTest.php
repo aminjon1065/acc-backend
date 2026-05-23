@@ -92,6 +92,56 @@ test('owner can view sales, expenses, profit and stock reports', function () {
         ->assertJsonPath('data.low_stock_products_count', 1);
 });
 
+test('seller profit report excludes cost of goods and computes profit as revenue minus expenses', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $seller = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Seller->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'sale_price' => 100,
+    ]);
+
+    $sale = Sale::factory()->create([
+        'shop_id' => $shop->id,
+        'user_id' => $seller->id,
+        'total' => 200,
+        'payment_type' => 'cash',
+    ]);
+    SaleItem::factory()->create([
+        'sale_id' => $sale->id,
+        'product_id' => $product->id,
+        'quantity' => 4,
+        'cost_price' => 30,
+        'price' => 50,
+        'total' => 200,
+    ]);
+    Expense::factory()->create([
+        'shop_id' => $shop->id,
+        'user_id' => $seller->id,
+        'total' => 60,
+    ]);
+
+    $this->actingAs($seller, 'sanctum')
+        ->getJson('/api/v1/reports/profit')
+        ->assertSuccessful()
+        ->assertJsonPath('data.total_sales', 200)
+        ->assertJsonPath('data.total_expenses', 60)
+        // profit must equal revenue − expenses, NOT revenue − cost − expenses
+        ->assertJsonPath('data.profit', 140)
+        // every cost-derived field is zeroed so a seller can't back-calculate
+        // cost_price from the response payload.
+        ->assertJsonPath('data.total_cost', 0)
+        ->assertJsonPath('data.cost_of_goods_sold', 0)
+        ->assertJsonPath('data.cost_of_goods_sold_gross', 0)
+        ->assertJsonPath('data.returns_cogs', 0);
+});
+
 test('owner report is scoped to own shop', function () {
     $shopA = Shop::factory()->create();
     $shopB = Shop::factory()->create();
