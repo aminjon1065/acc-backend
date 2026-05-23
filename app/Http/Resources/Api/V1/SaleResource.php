@@ -60,6 +60,13 @@ class SaleResource extends JsonResource
         return [
             'id' => $this->id,
             'shop_id' => $this->shop_id,
+            // Display name of the shop this sale belongs to. Mobile renders
+            // it on printed/shared receipts so super_admin / multi-shop owners
+            // see the correct branch and not their primary shop. Loaded eagerly
+            // when the controller asks for the `shop:id,name` relation; falls
+            // back to a lazy lookup otherwise so list endpoints still resolve
+            // it without a separate join.
+            'shop_name' => $this->resource->shop?->name,
             'user_id' => $this->user_id,
             // Seller display name — populated only when the controller eager-
             // loaded `user`. Mobile renders this in the sale list + detail

@@ -44,6 +44,37 @@ test('owner can create sale and stock decreases with debt calculation', function
     expect((float) $product->fresh()->stock_quantity)->toBe(8.0);
 });
 
+test('sale show endpoint exposes shop_name for receipt rendering', function () {
+    $shop = Shop::factory()->create(['name' => 'Branch Karatag']);
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'created_by' => $owner->id,
+        'stock_quantity' => 5,
+        'cost_price' => 2,
+        'sale_price' => 8,
+    ]);
+
+    $saleId = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'type' => 'product',
+            'paid' => 8,
+            'payment_type' => 'cash',
+            'items' => [['product_id' => $product->id, 'quantity' => 1, 'price' => 8]],
+        ])
+        ->assertSuccessful()
+        ->json('data.id');
+
+    $this->actingAs($owner, 'sanctum')
+        ->getJson("/api/v1/sales/{$saleId}")
+        ->assertSuccessful()
+        ->assertJsonPath('data.shop_id', $shop->id)
+        ->assertJsonPath('data.shop_name', 'Branch Karatag');
+});
+
 test('sale fails when product stock is insufficient', function () {
     $shop = Shop::factory()->create();
     $owner = User::factory()->create([
@@ -1033,15 +1064,18 @@ test('seller report shows only their own sales and expenses', function () {
     expect((float) $salesA['total_amount'])->toBe(100.0);
     expect((int) $salesA['total_sales'])->toBe(1);
 
-    // Profit report for seller A: revenue 100 − COGS 20 − expenses 30 = 50.
+    // Profit report for seller A: cost-of-goods is hidden from sellers, so
+    // profit ≡ revenue − expenses = 100 − 30 = 70. All cost-related fields
+    // must come back as 0 to prevent reverse-calculating cost_price.
     $profitA = $this->actingAs($sellerA, 'sanctum')
         ->getJson("/api/v1/reports/profit?date_from={$today}&date_to={$today}")
         ->assertSuccessful()
         ->json('data');
     expect((float) $profitA['total_sales'])->toBe(100.0);
-    expect((float) $profitA['cost_of_goods_sold'])->toBe(20.0);
+    expect((float) $profitA['cost_of_goods_sold'])->toBe(0.0);
+    expect((float) $profitA['total_cost'])->toBe(0.0);
     expect((float) $profitA['expenses_total'])->toBe(30.0);
-    expect((float) $profitA['profit'])->toBe(50.0);
+    expect((float) $profitA['profit'])->toBe(70.0);
 
     // Expenses report for seller A: only A expense.
     $expensesA = $this->actingAs($sellerA, 'sanctum')

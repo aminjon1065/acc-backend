@@ -32,7 +32,7 @@ class SaleController extends Controller
         $sales = $this->sales->paginateForUser(
             $request->user(),
             $request->integer('limit', 20),
-            ['items.product', 'user:id,name'],
+            ['items.product', 'user:id,name', 'shop:id,name'],
             $request,
         );
 
@@ -71,7 +71,7 @@ class SaleController extends Controller
     {
         $this->authorize('view', $sale);
 
-        $scoped = $this->sales->findForUser($request->user(), $sale->id, ['items.product', 'user:id,name']);
+        $scoped = $this->sales->findForUser($request->user(), $sale->id, ['items.product', 'user:id,name', 'shop:id,name']);
 
         return new SaleResource($scoped);
     }
@@ -86,7 +86,7 @@ class SaleController extends Controller
         $this->enforceVersionMatch(
             $request,
             $sale,
-            fn () => new SaleResource($this->sales->findForUser($request->user(), $sale->id, ['items.product', 'user:id,name'])),
+            fn () => new SaleResource($this->sales->findForUser($request->user(), $sale->id, ['items.product', 'user:id,name', 'shop:id,name'])),
             'sale',
         );
 
