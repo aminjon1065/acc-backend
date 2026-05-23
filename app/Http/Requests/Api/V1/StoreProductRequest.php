@@ -33,7 +33,9 @@ class StoreProductRequest extends FormRequest
                 'nullable',
                 'string',
                 'max:64',
-                Rule::unique('products', 'code')->where(fn ($query) => $query->where('shop_id', $shopId)),
+                Rule::unique('products', 'code')->where(fn ($query) => $query
+                    ->where('shop_id', $shopId)
+                    ->whereNull('deleted_at')),
             ],
             'unit' => ['nullable', 'string', 'max:32'],
             'cost_price' => ['required', 'numeric', 'min:0'],

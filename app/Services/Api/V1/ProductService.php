@@ -90,9 +90,26 @@ class ProductService
 
     public function deleteProduct(Product $product): void
     {
-        $this->deleteImage($product->image_path);
         $shopId = (int) $product->shop_id;
-        $product->delete();
+
+        /**
+         * Hard-delete when the product has no transactional history so the
+         * (shop_id, code) slot frees up and the same code can be re-used.
+         * If the product is referenced by purchases / sales / returns,
+         * fall back to a soft delete to preserve historical reports — those
+         * FKs use restrictOnDelete and would otherwise reject the operation.
+         */
+        $hasHistory = $product->purchaseItems()->exists()
+            || $product->saleItems()->exists();
+
+        $this->deleteImage($product->image_path);
+
+        if ($hasHistory) {
+            $product->delete();
+        } else {
+            $product->forceDelete();
+        }
+
         $this->productCatalogCache->bumpShop($shopId);
     }
 

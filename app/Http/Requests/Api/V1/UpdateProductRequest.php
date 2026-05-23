@@ -34,7 +34,9 @@ class UpdateProductRequest extends FormRequest
                 'string',
                 'max:64',
                 Rule::unique('products', 'code')
-                    ->where(fn ($query) => $query->where('shop_id', $shopId))
+                    ->where(fn ($query) => $query
+                        ->where('shop_id', $shopId)
+                        ->whereNull('deleted_at'))
                     ->ignore($productId),
             ],
             'unit' => ['sometimes', 'nullable', 'string', 'max:32'],

@@ -254,6 +254,43 @@ test('products ids endpoint returns id+updated_at scoped to actor', function () 
     expect($response->json('data.0'))->toHaveKey('updated_at');
 });
 
+test('deleting a product with no history hard-deletes the row and frees its code for reuse', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+
+    $original = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'code' => '2400',
+        'name' => 'Old name',
+    ]);
+
+    $this->actingAs($owner, 'sanctum')
+        ->deleteJson("/api/v1/products/{$original->id}")
+        ->assertOk();
+
+    expect(Product::query()->withTrashed()->where('shop_id', $shop->id)->where('code', '2400')->count())->toBe(0);
+
+    $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/products', [
+            'name' => 'Пастел',
+            'code' => '2400',
+            'unit' => 'шт',
+            'cost_price' => 100,
+            'sale_price' => 150,
+            'pricing_mode' => 'fixed',
+            'stock_quantity' => 10,
+            'low_stock_alert' => 1,
+        ])
+        ->assertCreated()
+        ->assertJsonPath('data.name', 'Пастел')
+        ->assertJsonPath('data.code', '2400');
+
+    expect(Product::query()->where('shop_id', $shop->id)->where('code', '2400')->count())->toBe(1);
+});
+
 test('products list hides soft-deleted rows by default and exposes them only with include_trashed', function () {
     $shop = Shop::factory()->create();
     $owner = User::factory()->create([
