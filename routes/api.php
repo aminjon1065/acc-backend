@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\DebtController;
 use App\Http\Controllers\Api\V1\ExpenseController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\ProductController;
+use App\Http\Controllers\Api\V1\ProfileController;
 use App\Http\Controllers\Api\V1\PurchaseController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\SaleController;
@@ -25,6 +26,13 @@ Route::prefix('v1')->group(function (): void {
         Route::get('auth/me', [AuthController::class, 'me']);
         Route::post('auth/logout', [AuthController::class, 'logout']);
         Route::post('auth/refresh', [AuthController::class, 'refresh']);
+
+        // Self-service profile edit (name / email / password). Available to
+        // every authenticated role — there's no policy gate because users
+        // only act on themselves; the request is implicitly scoped via
+        // `$request->user()`. `idempotent` keeps mobile retries safe.
+        Route::match(['put', 'patch'], 'profile', [ProfileController::class, 'update'])
+            ->middleware(['idempotent', 'throttle:mobile-writes']);
 
         Route::get('dashboard', [DashboardController::class, 'show'])->middleware('api_ability:dashboard,view');
 
