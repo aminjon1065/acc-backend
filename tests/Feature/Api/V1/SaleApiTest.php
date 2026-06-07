@@ -1085,3 +1085,172 @@ test('seller report shows only their own sales and expenses', function () {
     expect((float) $expensesA['total_amount'])->toBe(30.0);
     expect((int) $expensesA['count'])->toBe(1);
 });
+
+test('deleting a sale restores stock net of an existing return', function () {
+    // Start 10, sell 4 (→6), return 1 (→7). Deleting the sale must bring
+    // stock back to 10 — NOT 11. The returned unit was already credited to
+    // stock by the return, so the delete must only restore the still-out 3.
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'created_by' => $owner->id,
+        'stock_quantity' => 10,
+        'cost_price' => 4,
+        'sale_price' => 10,
+    ]);
+
+    $sale = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'type' => 'product',
+            'paid' => 40,
+            'payment_type' => 'cash',
+            'items' => [['product_id' => $product->id, 'quantity' => 4, 'price' => 10]],
+        ])
+        ->assertSuccessful()
+        ->json('data');
+    expect((float) $product->fresh()->stock_quantity)->toBe(6.0);
+
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/sales/{$sale['id']}/return", [
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ])
+        ->assertSuccessful();
+    expect((float) $product->fresh()->stock_quantity)->toBe(7.0);
+
+    $this->actingAs($owner, 'sanctum')
+        ->deleteJson("/api/v1/sales/{$sale['id']}")
+        ->assertSuccessful();
+
+    expect((float) $product->fresh()->stock_quantity)->toBe(10.0);
+});
+
+test('deleting a sale clears its returns from net sales reports and dashboard', function () {
+    // Sale 600 with a 150 return nets to 450. Deleting the sale must leave
+    // every figure at 0 — the orphaned refund must not keep subtracting from
+    // net revenue (the old bug left the totals at -150).
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'created_by' => $owner->id,
+        'stock_quantity' => 10,
+        'cost_price' => 50,
+        'sale_price' => 150,
+    ]);
+
+    $sale = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'type' => 'product',
+            'paid' => 600,
+            'payment_type' => 'cash',
+            'items' => [['product_id' => $product->id, 'quantity' => 4, 'price' => 150]],
+        ])
+        ->assertSuccessful()
+        ->json('data');
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/sales/{$sale['id']}/return", [
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ])
+        ->assertSuccessful();
+
+    $today = now()->toDateString();
+
+    $before = $this->actingAs($owner, 'sanctum')
+        ->getJson("/api/v1/reports/sales?date_from={$today}&date_to={$today}")
+        ->assertSuccessful()
+        ->json('data');
+    expect((float) $before['sales_gross'])->toBe(600.0);
+    expect((float) $before['returns_total'])->toBe(150.0);
+    expect((float) $before['total_amount'])->toBe(450.0);
+
+    $this->actingAs($owner, 'sanctum')
+        ->deleteJson("/api/v1/sales/{$sale['id']}")
+        ->assertSuccessful();
+
+    $report = $this->actingAs($owner, 'sanctum')
+        ->getJson("/api/v1/reports/sales?date_from={$today}&date_to={$today}")
+        ->assertSuccessful()
+        ->json('data');
+    expect((float) $report['sales_gross'])->toBe(0.0);
+    expect((float) $report['returns_total'])->toBe(0.0);
+    expect((float) $report['total_amount'])->toBe(0.0);
+    expect($report['returns'])->toBe([]);
+
+    $dashboard = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/dashboard?period=day')
+        ->assertSuccessful()
+        ->json('data');
+    expect((float) $dashboard['period_sales_total'])->toBe(0.0);
+    expect((float) $dashboard['period_returns_total'])->toBe(0.0);
+    expect((float) $dashboard['period_profit'])->toBe(0.0);
+
+    // Profit report must net to 0 too (no dangling COGS reversal either).
+    $profit = $this->actingAs($owner, 'sanctum')
+        ->getJson("/api/v1/reports/profit?date_from={$today}&date_to={$today}")
+        ->assertSuccessful()
+        ->json('data');
+    expect((float) $profit['sales_total'])->toBe(0.0);
+    expect((float) $profit['returns_total'])->toBe(0.0);
+    expect((float) $profit['profit'])->toBe(0.0);
+});
+
+test('deleting an owner sale with a return keeps the original seller dashboard consistent', function () {
+    // Seller rings up 600, owner refunds 150 → seller dashboard nets 450.
+    // Owner then deletes the sale → seller dashboard must show 0, not -150.
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $seller = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Seller->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'created_by' => $owner->id,
+        'stock_quantity' => 10,
+        'cost_price' => 50,
+        'sale_price' => 150,
+    ]);
+
+    $sale = $this->actingAs($seller, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'type' => 'product',
+            'paid' => 600,
+            'payment_type' => 'cash',
+            'items' => [['product_id' => $product->id, 'quantity' => 4, 'price' => 150]],
+        ])
+        ->assertSuccessful()
+        ->json('data');
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/sales/{$sale['id']}/return", [
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ])
+        ->assertSuccessful();
+
+    // Seller sees the net (Test 1 — owner-processed return attributed to seller).
+    $sellerBefore = $this->actingAs($seller, 'sanctum')
+        ->getJson('/api/v1/dashboard?period=day')
+        ->assertSuccessful()
+        ->json('data');
+    expect((float) $sellerBefore['period_sales_total'])->toBe(450.0);
+
+    $this->actingAs($owner, 'sanctum')
+        ->deleteJson("/api/v1/sales/{$sale['id']}")
+        ->assertSuccessful();
+
+    $sellerAfter = $this->actingAs($seller, 'sanctum')
+        ->getJson('/api/v1/dashboard?period=day')
+        ->assertSuccessful()
+        ->json('data');
+    expect((float) $sellerAfter['period_sales_total'])->toBe(0.0);
+    expect((float) $sellerAfter['period_returns_total'])->toBe(0.0);
+});

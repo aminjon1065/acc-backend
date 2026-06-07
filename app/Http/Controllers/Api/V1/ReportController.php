@@ -670,7 +670,13 @@ class ReportController extends Controller
      */
     private function scopeSaleItems(User $user, Request $request): Builder
     {
-        $query = SaleItem::query()->join('sales', 'sales.id', '=', 'sale_items.sale_id');
+        // Exclude soft-deleted sales — the raw join bypasses the Sale
+        // model's SoftDeletes scope, so a deleted sale's items would
+        // otherwise keep counting toward COGS while its gross revenue
+        // (queried via Eloquent) is already excluded.
+        $query = SaleItem::query()
+            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
+            ->whereNull('sales.deleted_at');
         $this->applyShopScope($query, $user, $request, table: 'sales');
         $this->applySellerOwnership($query, $user, 'sales.user_id');
 

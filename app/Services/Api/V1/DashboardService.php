@@ -51,8 +51,13 @@ class DashboardService
         $salesTotal = (float) (clone $salesQuery)->sum('total');
         $expensesTotal = (float) (clone $expensesQuery)->sum('total');
 
+        // Exclude soft-deleted sales: the raw join bypasses the Sale model's
+        // SoftDeletes global scope, so without this a deleted sale's items
+        // keep inflating COGS even though its gross revenue (Eloquent) is
+        // already gone — pinning period_profit at -COGS forever.
         $saleItemsQuery = SaleItem::query()
             ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
+            ->whereNull('sales.deleted_at')
             ->whereBetween('sales.created_at', [$from, $to]);
 
         if ($shopIds !== null) {

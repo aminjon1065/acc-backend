@@ -364,22 +364,61 @@ class SaleService
      * via `withTrashed()` so audit + dashboard back-history stays whole.
      * We still increment `version` and bump caches so subsequent index
      * pulls drop the row from listing.
+     *
+     * Returns processed against this sale must be unwound here:
+     *   • Stock — `returnSale` already credited the returned units back on
+     *     the shelf. Restoring the FULL sold quantity would double-count
+     *     them (stock drifts above the pre-sale level). We restore only the
+     *     NET still-out quantity = sold − already-returned per product.
+     *   • Refund records — the `sale_returns` rows only make sense next to a
+     *     live sale. Soft-deleting the sale doesn't fire the FK cascade, so
+     *     they'd be orphaned and keep subtracting from net-sales / COGS /
+     *     stock reports forever (negative totals, phantom loss). We remove
+     *     them inside the same transaction so every aggregate recomputes
+     *     cleanly the moment the sale is gone.
      */
     public function deleteSale(Sale $sale, User $actor): void
     {
         DB::transaction(function () use ($sale, $actor): void {
             $shopId = (int) $sale->shop_id;
 
-            // Restore stock — same shape as updateSale's old-item rollback.
-            $productIds = $sale->items->pluck('product_id')->filter()->unique()->values();
+            // How much of each product has already been returned for this
+            // sale — those units were credited back to stock by returnSale.
+            $returnedByProduct = SaleReturnItem::query()
+                ->whereHas('saleReturn', fn ($q) => $q->where('sale_id', $sale->id))
+                ->whereNotNull('product_id')
+                ->select('product_id')
+                ->selectRaw('SUM(quantity) as total_qty')
+                ->groupBy('product_id')
+                ->pluck('total_qty', 'product_id')
+                ->map(fn ($v): float => (float) $v);
+
+            // Aggregate sold quantity per product (a product may span several
+            // lines) so the restore is net-of-returns and duplicate-safe.
+            $soldByProduct = $sale->items
+                ->filter(fn ($item): bool => $item->product_id && $item->quantity)
+                ->groupBy('product_id')
+                ->map(fn ($lines): float => (float) $lines->sum('quantity'));
+
+            $productIds = $soldByProduct->keys()->values();
             $products = $productIds->isNotEmpty()
                 ? Product::query()->whereIn('id', $productIds)->lockForUpdate()->get()->keyBy('id')
                 : collect();
 
-            foreach ($sale->items as $item) {
-                if ($item->product_id && $item->quantity) {
-                    $products->get($item->product_id)?->increment('stock_quantity', (float) $item->quantity);
+            foreach ($soldByProduct as $productId => $soldQty) {
+                $alreadyReturned = (float) ($returnedByProduct[$productId] ?? 0);
+                $restoreQty = max($soldQty - $alreadyReturned, 0);
+                if ($restoreQty > 0) {
+                    $products->get($productId)?->increment('stock_quantity', $restoreQty);
                 }
+            }
+
+            // Drop the sale's returns (items first for FK safety) so their
+            // refund + restocked goods stop skewing every aggregate.
+            $returns = SaleReturn::query()->where('sale_id', $sale->id)->get();
+            foreach ($returns as $return) {
+                $return->items()->delete();
+                $return->delete();
             }
 
             $sale->increment('version');
