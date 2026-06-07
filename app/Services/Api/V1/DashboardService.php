@@ -377,11 +377,22 @@ class DashboardService
             $totalsQuery->whereIn('sale_returns.shop_id', $shopIds);
         }
 
+        /**
+         * Sellers must see refunds against THEIR sales, regardless of who
+         * pressed the "return" button. Filtering on `sale_returns.user_id`
+         * (the actor who processed the refund) would hide every owner-driven
+         * return from the seller's dashboard, even though the sale itself
+         * belongs to the seller. Join the parent sale and filter on
+         * `sales.user_id` — same contract `ReportController` already uses.
+         */
         if ($sellerId !== null) {
-            $totalsQuery->where('sale_returns.user_id', $sellerId);
+            $totalsQuery
+                ->join('sales', 'sales.id', '=', 'sale_returns.sale_id')
+                ->where('sales.user_id', $sellerId)
+                ->select('sale_returns.*');
         }
 
-        $returnsTotal = (float) (clone $totalsQuery)->sum('total');
+        $returnsTotal = (float) (clone $totalsQuery)->sum('sale_returns.total');
 
         $cogsQuery = DB::table('sale_return_items')
             ->join('sale_returns', 'sale_returns.id', '=', 'sale_return_items.sale_return_id')
@@ -402,7 +413,9 @@ class DashboardService
         }
 
         if ($sellerId !== null) {
-            $cogsQuery->where('sale_returns.user_id', $sellerId);
+            $cogsQuery
+                ->join('sales', 'sales.id', '=', 'sale_returns.sale_id')
+                ->where('sales.user_id', $sellerId);
         }
 
         $returnsCogs = (float) $cogsQuery

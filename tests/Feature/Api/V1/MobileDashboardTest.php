@@ -145,6 +145,74 @@ it('returns the aggregated mobile dashboard payload for a seller', function () {
     CarbonImmutable::setTestNow();
 });
 
+it('attributes owner-processed returns to the original seller on the seller dashboard', function () {
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-05-25 10:00:00'));
+
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner,
+    ]);
+    $seller = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Seller,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'created_by' => $owner->id,
+        'cost_price' => 4,
+        'sale_price' => 10,
+        'stock_quantity' => 10,
+    ]);
+
+    // Seller rang up a sale of 6 units.
+    $sale = Sale::factory()->create([
+        'shop_id' => $shop->id,
+        'user_id' => $seller->id,
+        'total' => 60,
+        'paid' => 60,
+        'payment_type' => 'cash',
+    ]);
+    SaleItem::factory()->create([
+        'sale_id' => $sale->id,
+        'product_id' => $product->id,
+        'quantity' => 6,
+        'cost_price' => 4,
+        'price' => 10,
+        'total' => 60,
+    ]);
+
+    // OWNER processes a 1-unit return against the seller's sale.
+    $return = \App\Models\SaleReturn::query()->create([
+        'shop_id' => $shop->id,
+        'sale_id' => $sale->id,
+        'user_id' => $owner->id,
+        'refund_method' => 'cash',
+        'total' => 10,
+    ]);
+    \App\Models\SaleReturnItem::query()->create([
+        'shop_id' => $shop->id,
+        'sale_return_id' => $return->id,
+        'product_id' => $product->id,
+        'name' => 'unit',
+        'quantity' => 1,
+        'price' => 10,
+        'total' => 10,
+    ]);
+
+    Sanctum::actingAs($seller, ['dashboard:view']);
+
+    $payload = $this->getJson('/api/v1/dashboard?period=day')
+        ->assertSuccessful()
+        ->json('data');
+
+    // Net revenue must reflect the return: 60 − 10 = 50.
+    expect((float) $payload['period_sales_total'])->toBe(50.0);
+    expect((float) $payload['period_returns_total'])->toBe(10.0);
+
+    CarbonImmutable::setTestNow();
+});
+
 it('allows sellers to list debts for the mobile app', function () {
     $shop = Shop::factory()->create();
     $seller = User::factory()->create([
