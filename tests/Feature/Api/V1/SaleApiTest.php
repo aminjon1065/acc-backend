@@ -368,6 +368,45 @@ test('owner can patch sale metadata without touching items', function () {
     expect($product->fresh()->stock_quantity)->toEqual(8);
 });
 
+test('owner can patch sale notes without touching items', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'stock_quantity' => 10,
+        'cost_price' => 100,
+        'sale_price' => 150,
+    ]);
+
+    $saleId = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'notes' => 'Изначальная заметка',
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+            'paid' => 150,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.notes', 'Изначальная заметка')
+        ->json('data.id');
+
+    $this->actingAs($owner, 'sanctum')
+        ->patchJson("/api/v1/sales/{$saleId}", [
+            'notes' => 'Обновлённая заметка',
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.notes', 'Обновлённая заметка');
+
+    // Clearing the note must persist too (null, not the stale value).
+    $this->actingAs($owner, 'sanctum')
+        ->patchJson("/api/v1/sales/{$saleId}", [
+            'notes' => null,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('data.notes', null);
+});
+
 test('seller cannot patch a sale', function () {
     $shop = Shop::factory()->create();
     $owner = User::factory()->create([

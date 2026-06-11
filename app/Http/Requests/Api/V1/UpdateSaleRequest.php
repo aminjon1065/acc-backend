@@ -27,6 +27,11 @@ class UpdateSaleRequest extends FormRequest
             'discount' => ['nullable', 'numeric', 'min:0'],
             'paid' => ['nullable', 'numeric', 'min:0'],
             'payment_type' => ['nullable', 'string', 'in:cash,card,transfer'],
+            // `notes` must be in the rule set: updateSale() only writes a
+            // field when it's present in `$request->validated()`, so without
+            // this an edited note is silently dropped. The column is a
+            // nullable TEXT — no length cap, mirroring create.
+            'notes' => ['nullable', 'string'],
             // See StoreSaleRequest — `type` is server-derived from items.
             'type' => ['nullable', 'string', 'in:product,service'],
             'items' => ['nullable', 'array', 'min:1'],
