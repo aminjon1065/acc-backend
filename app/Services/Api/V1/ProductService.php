@@ -13,6 +13,7 @@ class ProductService
     public function __construct(
         private readonly ProductRepository $products,
         private readonly ProductCatalogCache $productCatalogCache,
+        private readonly DashboardCacheVersion $dashboardCacheVersion,
     ) {}
 
     /**
@@ -40,6 +41,10 @@ class ProductService
         ]);
 
         $this->productCatalogCache->bumpShop((int) $shopId);
+        // Dashboard stock cards (stock totals, low-stock count) read the
+        // catalogue too — bump their cache version so they don't serve a
+        // stale snapshot for up to the 300s TTL after a catalogue change.
+        $this->dashboardCacheVersion->bumpShop((int) $shopId);
 
         return $product;
     }
@@ -69,6 +74,7 @@ class ProductService
         $product->save();
 
         $this->productCatalogCache->bumpShop((int) $product->shop_id);
+        $this->dashboardCacheVersion->bumpShop((int) $product->shop_id);
 
         return $product;
     }
@@ -111,6 +117,7 @@ class ProductService
         }
 
         $this->productCatalogCache->bumpShop($shopId);
+        $this->dashboardCacheVersion->bumpShop($shopId);
     }
 
     /**

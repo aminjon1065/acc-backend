@@ -320,3 +320,70 @@ test('products list hides soft-deleted rows by default and exposes them only wit
 
     expect($idsWithTrashed)->toContain($alive->id)->toContain($gone->id);
 });
+
+test('product update immediately refreshes dashboard stock totals (no stale cache)', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'created_by' => $owner->id,
+        'stock_quantity' => 10,
+        'cost_price' => 5,
+        'sale_price' => 10,
+    ]);
+
+    // Prime the dashboard cache at the original stock level.
+    $first = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/dashboard?period=day')
+        ->assertSuccessful()
+        ->json('data.stock_total_qty');
+    expect((float) $first)->toBe(10.0);
+
+    // Change stock through a product update.
+    $this->actingAs($owner, 'sanctum')
+        ->patchJson("/api/v1/products/{$product->id}", ['stock_quantity' => 50])
+        ->assertSuccessful();
+
+    // Dashboard must reflect it at once — the product mutation has to bump
+    // the dashboard cache version, otherwise the cached snapshot lingers
+    // for the full TTL (the "stock updates after several minutes" bug).
+    $second = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/dashboard?period=day')
+        ->assertSuccessful()
+        ->json('data.stock_total_qty');
+    expect((float) $second)->toBe(50.0);
+});
+
+test('product deletion immediately refreshes dashboard stock totals', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'created_by' => $owner->id,
+        'stock_quantity' => 30,
+        'cost_price' => 5,
+        'sale_price' => 10,
+    ]);
+
+    $first = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/dashboard?period=day')
+        ->assertSuccessful()
+        ->json('data.stock_total_qty');
+    expect((float) $first)->toBe(30.0);
+
+    $this->actingAs($owner, 'sanctum')
+        ->deleteJson("/api/v1/products/{$product->id}")
+        ->assertSuccessful();
+
+    $second = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/dashboard?period=day')
+        ->assertSuccessful()
+        ->json('data.stock_total_qty');
+    expect((float) $second)->toBe(0.0);
+});

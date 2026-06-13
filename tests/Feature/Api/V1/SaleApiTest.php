@@ -1293,3 +1293,60 @@ test('deleting an owner sale with a return keeps the original seller dashboard c
     expect((float) $sellerAfter['period_sales_total'])->toBe(0.0);
     expect((float) $sellerAfter['period_returns_total'])->toBe(0.0);
 });
+
+test('editing a returned sale preserves the return-adjusted debt', function () {
+    // total 1000 (1100 − 100 discount), paid 100 ⇒ debt 900.
+    // Return 0.5 @ 1100 = 550 ⇒ debt 350. A later metadata edit must keep
+    // the debt at 350 — recomputing it as total − paid would resurrect the
+    // returned amount (the reported "return not included in debt" bug).
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'created_by' => $owner->id,
+        'stock_quantity' => 10,
+        'cost_price' => 1,
+        'sale_price' => 1100,
+    ]);
+
+    $sale = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'type' => 'product',
+            'discount' => 100,
+            'paid' => 100,
+            'payment_type' => 'cash',
+            'items' => [['product_id' => $product->id, 'quantity' => 1, 'price' => 1100]],
+        ])
+        ->assertSuccessful()
+        ->json('data');
+    expect((float) $sale['debt'])->toBe(900.0);
+
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/sales/{$sale['id']}/return", [
+            'items' => [['product_id' => $product->id, 'quantity' => 0.5]],
+        ])
+        ->assertSuccessful();
+    expect((float) \App\Models\Sale::find($sale['id'])->debt)->toBe(350.0);
+
+    // Metadata-only edit — debt must stay 350, not jump to total − paid.
+    $afterEdit = $this->actingAs($owner, 'sanctum')
+        ->patchJson("/api/v1/sales/{$sale['id']}", [
+            'customer_name' => 'Изменён',
+        ])
+        ->assertSuccessful()
+        ->json('data');
+    expect((float) $afterEdit['debt'])->toBe(350.0);
+
+    // A non-return edit that lowers `paid` still adjusts debt correctly:
+    // 350 − (additional 50 paid) = 300.
+    $afterPay = $this->actingAs($owner, 'sanctum')
+        ->patchJson("/api/v1/sales/{$sale['id']}", [
+            'paid' => 50,
+        ])
+        ->assertSuccessful()
+        ->json('data');
+    expect((float) $afterPay['debt'])->toBe(300.0);
+});

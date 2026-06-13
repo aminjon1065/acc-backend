@@ -287,7 +287,13 @@ class SaleService
             }
 
             $total = max($subTotal - $discount, 0);
-            $debt = max($total - $paid, 0);
+            // Adjust the stored debt by the change in total / paid rather than
+            // recomputing it from `total - paid`. A prior return reduced this
+            // sale's debt (returnSale subtracts the refunded amount); a flat
+            // recompute here would resurrect that amount and ignore the
+            // return. For a sale with no returns this is identical to
+            // `total - paid` because the stored debt already equals it.
+            $debt = max((float) $sale->debt + ($total - (float) $sale->total) - ($paid - (float) $sale->paid), 0);
 
             // Re-derive `type` whenever the items collection changes — see
             // createSale for the rationale. Editing a service-only sale into
