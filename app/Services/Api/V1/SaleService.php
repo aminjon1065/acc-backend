@@ -287,13 +287,11 @@ class SaleService
             }
 
             $total = max($subTotal - $discount, 0);
-            // Adjust the stored debt by the change in total / paid rather than
-            // recomputing it from `total - paid`. A prior return reduced this
-            // sale's debt (returnSale subtracts the refunded amount); a flat
-            // recompute here would resurrect that amount and ignore the
-            // return. For a sale with no returns this is identical to
-            // `total - paid` because the stored debt already equals it.
-            $debt = max((float) $sale->debt + ($total - (float) $sale->total) - ($paid - (float) $sale->paid), 0);
+            // Debt invariant: debt = total − all-returns − paid. Recomputing
+            // purely from `total - paid` would ignore refunds already issued
+            // against this sale (resurrecting the returned amount). For a sale
+            // with no returns the returns sum is 0, so this is just total − paid.
+            $debt = max($total - (float) $sale->returns()->sum('total') - $paid, 0);
 
             // Re-derive `type` whenever the items collection changes — see
             // createSale for the rationale. Editing a service-only sale into
@@ -538,10 +536,20 @@ class SaleService
             }
 
             $refundAmount = min($returnTotal, (float) $sale->paid);
+            $newPaid = max((float) $sale->paid - $refundAmount, 0);
+
+            // Debt invariant: debt = total − all-returns − paid. Subtracting
+            // the FULL return amount from the stored debt double-counts the
+            // portion refunded in cash (which already came back to the
+            // customer via `paid`), so a paid-up sale wrongly dropped to debt
+            // 0 — the "Долг не записан" bug. `$sale->returns()` holds the
+            // prior returns; this return's amount isn't persisted yet.
+            $returnedSoFar = (float) $sale->returns()->sum('total');
+            $newDebt = max((float) $sale->total - ($returnedSoFar + $returnTotal) - $newPaid, 0);
 
             $sale->update([
-                'paid' => max((float) $sale->paid - $refundAmount, 0),
-                'debt' => max((float) $sale->debt - $returnTotal, 0),
+                'paid' => $newPaid,
+                'debt' => $newDebt,
             ]);
 
             // The `offset_debt` refund method used to walk the receivable

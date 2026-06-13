@@ -1294,11 +1294,57 @@ test('deleting an owner sale with a return keeps the original seller dashboard c
     expect((float) $sellerAfter['period_returns_total'])->toBe(0.0);
 });
 
+test('return records debt as total minus returns minus paid', function () {
+    // Reproduces the reported case: 7 × 200 = 1400, −50 discount ⇒ total 1350,
+    // paid 1200 ⇒ debt 150. Return 2 @ 200 = 400 refunds 400 cash (paid 1200 →
+    // 800). Debt must stay 150 (= 1350 − 400 − 800), NOT collapse to 0 from
+    // subtracting the full 400 off the debt.
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'created_by' => $owner->id,
+        'stock_quantity' => 10,
+        'cost_price' => 1,
+        'sale_price' => 200,
+    ]);
+
+    $sale = $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/sales', [
+            'type' => 'product',
+            'discount' => 50,
+            'paid' => 1200,
+            'payment_type' => 'cash',
+            'items' => [['product_id' => $product->id, 'quantity' => 7, 'price' => 200]],
+        ])
+        ->assertSuccessful()
+        ->json('data');
+    expect((float) $sale['total'])->toBe(1350.0);
+    expect((float) $sale['debt'])->toBe(150.0);
+
+    $this->actingAs($owner, 'sanctum')
+        ->postJson("/api/v1/sales/{$sale['id']}/return", [
+            'items' => [['product_id' => $product->id, 'quantity' => 2]],
+        ])
+        ->assertSuccessful();
+
+    $fresh = $this->actingAs($owner, 'sanctum')
+        ->getJson("/api/v1/sales/{$sale['id']}")
+        ->assertSuccessful()
+        ->json('data');
+    expect((float) $fresh['paid'])->toBe(800.0);
+    expect((float) $fresh['returned_total'])->toBe(400.0);
+    expect((float) $fresh['debt'])->toBe(150.0);
+});
+
 test('editing a returned sale preserves the return-adjusted debt', function () {
     // total 1000 (1100 − 100 discount), paid 100 ⇒ debt 900.
-    // Return 0.5 @ 1100 = 550 ⇒ debt 350. A later metadata edit must keep
-    // the debt at 350 — recomputing it as total − paid would resurrect the
-    // returned amount (the reported "return not included in debt" bug).
+    // Return 0.5 @ 1100 = 550 refunds 100 cash (paid → 0) ⇒ debt
+    // 1000 − 550 − 0 = 450. A later metadata edit must keep the debt at 450 —
+    // recomputing it as total − paid would resurrect the returned amount.
     $shop = Shop::factory()->create();
     $owner = User::factory()->create([
         'shop_id' => $shop->id,
@@ -1329,24 +1375,24 @@ test('editing a returned sale preserves the return-adjusted debt', function () {
             'items' => [['product_id' => $product->id, 'quantity' => 0.5]],
         ])
         ->assertSuccessful();
-    expect((float) \App\Models\Sale::find($sale['id'])->debt)->toBe(350.0);
+    expect((float) \App\Models\Sale::find($sale['id'])->debt)->toBe(450.0);
 
-    // Metadata-only edit — debt must stay 350, not jump to total − paid.
+    // Metadata-only edit — debt must stay 450, not jump to total − paid.
     $afterEdit = $this->actingAs($owner, 'sanctum')
         ->patchJson("/api/v1/sales/{$sale['id']}", [
             'customer_name' => 'Изменён',
         ])
         ->assertSuccessful()
         ->json('data');
-    expect((float) $afterEdit['debt'])->toBe(350.0);
+    expect((float) $afterEdit['debt'])->toBe(450.0);
 
-    // A non-return edit that lowers `paid` still adjusts debt correctly:
-    // 350 − (additional 50 paid) = 300.
+    // A non-return edit that raises `paid` still adjusts debt correctly:
+    // 1000 − 550 − 50 = 400.
     $afterPay = $this->actingAs($owner, 'sanctum')
         ->patchJson("/api/v1/sales/{$sale['id']}", [
             'paid' => 50,
         ])
         ->assertSuccessful()
         ->json('data');
-    expect((float) $afterPay['debt'])->toBe(300.0);
+    expect((float) $afterPay['debt'])->toBe(400.0);
 });
