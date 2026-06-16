@@ -158,7 +158,10 @@ class DashboardService
             : CarbonImmutable::now();
 
         return match ($period) {
-            'week' => [$anchor->startOfWeek()->startOfDay(), $anchor->endOfWeek()->endOfDay(), $period],
+            // "Week" = rolling last 7 days (today and the 6 days before it),
+            // not the calendar week — so a sale from a few days ago still
+            // shows even when it falls in the previous Mon–Sun week.
+            'week' => [$anchor->subDays(6)->startOfDay(), $anchor->endOfDay(), $period],
             'month' => [$anchor->startOfMonth()->startOfDay(), $anchor->endOfMonth()->endOfDay(), $period],
             'year' => [$anchor->startOfYear()->startOfDay(), $anchor->endOfYear()->endOfDay(), $period],
             default => [$anchor->startOfDay(), $anchor->endOfDay(), 'day'],

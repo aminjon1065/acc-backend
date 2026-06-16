@@ -235,3 +235,40 @@ it('allows sellers to list debts for the mobile app', function () {
         ->assertJsonPath('data.0.id', $debt->id)
         ->assertJsonPath('data.0.direction', 'receivable');
 });
+
+it('treats the week period as a rolling last-7-days window', function () {
+    // Wednesday 2026-06-17. Last 7 days = 06-11 .. 06-17.
+    // The calendar week (Mon–Sun) would be 06-15 .. 06-21, which excludes a
+    // sale made on Sat 06-13 — but that sale IS within the last 7 days and
+    // must show under "week".
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-06-17 12:00:00'));
+
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner,
+    ]);
+
+    Sale::factory()->create([
+        'shop_id' => $shop->id,
+        'user_id' => $owner->id,
+        'total' => 250,
+        'paid' => 250,
+        'debt' => 0,
+        'discount' => 0,
+        'created_at' => CarbonImmutable::parse('2026-06-13 10:00:00'),
+        'updated_at' => CarbonImmutable::parse('2026-06-13 10:00:00'),
+    ]);
+
+    Sanctum::actingAs($owner, ['dashboard:view']);
+
+    $data = $this->getJson('/api/v1/dashboard?period=week')
+        ->assertSuccessful()
+        ->json('data');
+
+    expect($data['date_from'])->toBe('2026-06-11');
+    expect($data['date_to'])->toBe('2026-06-17');
+    expect((float) $data['period_sales_total'])->toBe(250.0);
+
+    CarbonImmutable::setTestNow();
+});
