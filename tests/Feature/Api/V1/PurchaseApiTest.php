@@ -291,3 +291,41 @@ test('super admin must provide shop_id when creating purchase', function () {
         ->assertUnprocessable()
         ->assertJsonValidationErrors('shop_id');
 });
+
+test('a purchase immediately refreshes dashboard stock totals (no stale cache)', function () {
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create([
+        'shop_id' => $shop->id,
+        'role' => UserRole::Owner->value,
+    ]);
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id,
+        'created_by' => $owner->id,
+        'stock_quantity' => 10,
+        'cost_price' => 5,
+        'sale_price' => 10,
+    ]);
+
+    // Prime the dashboard cache at the original stock level.
+    $first = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/dashboard?period=day')
+        ->assertSuccessful()
+        ->json('data.stock_total_qty');
+    expect((float) $first)->toBe(10.0);
+
+    // Receive 15 units via a purchase.
+    $this->actingAs($owner, 'sanctum')
+        ->postJson('/api/v1/purchases', [
+            'items' => [['product_id' => $product->id, 'quantity' => 15, 'price' => 6]],
+        ])
+        ->assertSuccessful();
+
+    // Dashboard must reflect 10 + 15 = 25 at once — the purchase has to bump
+    // the dashboard cache version, otherwise the cached snapshot lingers for
+    // the full TTL ("приход через закупку не считается на главной" bug).
+    $second = $this->actingAs($owner, 'sanctum')
+        ->getJson('/api/v1/dashboard?period=day')
+        ->assertSuccessful()
+        ->json('data.stock_total_qty');
+    expect((float) $second)->toBe(25.0);
+});

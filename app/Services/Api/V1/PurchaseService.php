@@ -16,6 +16,7 @@ class PurchaseService
         private readonly PurchaseRepository $purchases,
         private readonly AuditLogger $auditLogger,
         private readonly ProductCatalogCache $productCatalogCache,
+        private readonly DashboardCacheVersion $dashboardCacheVersion,
     ) {}
 
     /**
@@ -90,6 +91,10 @@ class PurchaseService
             ], $shopId);
 
             $this->productCatalogCache->bumpShop($shopId);
+            // Purchases change stock / cost, which the dashboard stock cards
+            // aggregate — bump the dashboard cache version too so the main
+            // page reflects the new stock at once instead of after the TTL.
+            $this->dashboardCacheVersion->bumpShop($shopId);
 
             return $freshPurchase;
         });
@@ -188,6 +193,10 @@ class PurchaseService
             ], $shopId);
 
             $this->productCatalogCache->bumpShop($shopId);
+            // Purchases change stock / cost, which the dashboard stock cards
+            // aggregate — bump the dashboard cache version too so the main
+            // page reflects the new stock at once instead of after the TTL.
+            $this->dashboardCacheVersion->bumpShop($shopId);
 
             return $fresh;
         });
@@ -217,6 +226,10 @@ class PurchaseService
             ], $shopId);
 
             $this->productCatalogCache->bumpShop($shopId);
+            // Purchases change stock / cost, which the dashboard stock cards
+            // aggregate — bump the dashboard cache version too so the main
+            // page reflects the new stock at once instead of after the TTL.
+            $this->dashboardCacheVersion->bumpShop($shopId);
         });
     }
 
