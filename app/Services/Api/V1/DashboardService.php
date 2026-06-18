@@ -23,7 +23,11 @@ class DashboardService
      */
     public function build(User $user, array $filters): array
     {
-        [$from, $to, $period] = $this->resolvePeriod($filters);
+        [$fromLocal, $toLocal, $period] = $this->resolvePeriod($filters);
+        // Boundaries come back in the business timezone (for display); convert
+        // to UTC for every query because timestamps are stored in UTC.
+        $from = $fromLocal->utc();
+        $to = $toLocal->utc();
         $shopIds = $this->resolveShopIdFilter($user, $filters);
         $shopId = $this->resolveShopId($user, $filters);
         $sellerId = $this->resolveSellerId($user);
@@ -113,8 +117,8 @@ class DashboardService
 
         return [
             'period' => $period,
-            'date_from' => $from->toDateString(),
-            'date_to' => $to->toDateString(),
+            'date_from' => $fromLocal->toDateString(),
+            'date_to' => $toLocal->toDateString(),
             'shop_id' => $shopId,
             'period_sales_total' => $netSalesTotal,
             'period_sales_gross' => $salesTotal,
@@ -144,18 +148,22 @@ class DashboardService
     private function resolvePeriod(array $filters): array
     {
         $period = (string) ($filters['period'] ?? 'day');
+        // Anchor period windows to the shop's local calendar day. build()
+        // converts the resulting boundaries to UTC for the (UTC-stored)
+        // queries, so "Сегодня" means local 00:00–23:59, not the UTC day.
+        $tz = (string) config('app.business_timezone');
 
         if ($period === 'custom') {
             return [
-                CarbonImmutable::parse((string) $filters['date_from'])->startOfDay(),
-                CarbonImmutable::parse((string) $filters['date_to'])->endOfDay(),
+                CarbonImmutable::parse((string) $filters['date_from'], $tz)->startOfDay(),
+                CarbonImmutable::parse((string) $filters['date_to'], $tz)->endOfDay(),
                 $period,
             ];
         }
 
         $anchor = array_key_exists('date', $filters)
-            ? CarbonImmutable::parse((string) $filters['date'])
-            : CarbonImmutable::now();
+            ? CarbonImmutable::parse((string) $filters['date'], $tz)
+            : CarbonImmutable::now($tz);
 
         return match ($period) {
             // "Week" = rolling last 7 days (today and the 6 days before it),

@@ -272,3 +272,39 @@ it('treats the week period as a rolling last-7-days window', function () {
 
     CarbonImmutable::setTestNow();
 });
+
+it('treats the day period as the local calendar day, not the UTC day', function () {
+    // Business tz = Asia/Dushanbe (UTC+5). "Now" = 2026-06-16 12:00 local.
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-06-16 12:00:00', 'Asia/Dushanbe'));
+
+    $shop = Shop::factory()->create();
+    $owner = User::factory()->create(['shop_id' => $shop->id, 'role' => UserRole::Owner]);
+
+    // 00:30 LOCAL on June 16 = 19:30 UTC on June 15 (stored UTC). This is
+    // "today" locally and MUST count toward today.
+    Sale::factory()->create([
+        'shop_id' => $shop->id, 'user_id' => $owner->id,
+        'total' => 100, 'paid' => 100, 'debt' => 0, 'discount' => 0,
+        'created_at' => '2026-06-15 19:30:00', 'updated_at' => '2026-06-15 19:30:00',
+    ]);
+
+    // 23:00 LOCAL on June 15 = 18:00 UTC on June 15 — that's *yesterday*
+    // locally and must NOT count toward today.
+    Sale::factory()->create([
+        'shop_id' => $shop->id, 'user_id' => $owner->id,
+        'total' => 999, 'paid' => 999, 'debt' => 0, 'discount' => 0,
+        'created_at' => '2026-06-15 18:00:00', 'updated_at' => '2026-06-15 18:00:00',
+    ]);
+
+    Sanctum::actingAs($owner, ['dashboard:view']);
+
+    $data = $this->getJson('/api/v1/dashboard?period=day')
+        ->assertSuccessful()
+        ->json('data');
+
+    expect($data['date_from'])->toBe('2026-06-16');
+    expect($data['date_to'])->toBe('2026-06-16');
+    expect((float) $data['period_sales_total'])->toBe(100.0);
+
+    CarbonImmutable::setTestNow();
+});

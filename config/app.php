@@ -69,6 +69,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Business Timezone
+    |--------------------------------------------------------------------------
+    |
+    | Timestamps are stored in UTC, but reporting periods (the dashboard
+    | "Сегодня" / "Неделя" / "Месяц" windows) must align to the shop's local
+    | calendar day. This is the timezone those day boundaries are computed in
+    | before being converted back to UTC for the query. Defaults to Tajikistan
+    | (UTC+5, no DST).
+    |
+    */
+
+    'business_timezone' => env('APP_BUSINESS_TIMEZONE', 'Asia/Dushanbe'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Locale Configuration
     |--------------------------------------------------------------------------
     |
